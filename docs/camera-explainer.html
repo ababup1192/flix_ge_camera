@@ -1,0 +1,1045 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>追従カメラのしくみ — game-starter 解説</title>
+</head>
+<body>
+<style>
+  :root {
+    --bg: #0e0e16;
+    --surface: #161622;
+    --surface2: #1c1c2a;
+    --border: #2a2a3a;
+    --text: #e9e9f2;
+    --muted: #9c9cb4;
+    --blue: #639bff;      /* プレイヤー box の実際の色 */
+    --amber: #ffb454;     /* カメラ関連の注釈色 */
+    --green: #7ecf9a;     /* タイル計算の注釈色 */
+    --tile-a: #24242e;    /* View.tileColorA の実際の色 */
+    --tile-b: #30303c;    /* View.tileColorB の実際の色 */
+    --code-bg: #12121c;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", sans-serif;
+    line-height: 1.85;
+    margin: 0;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ── header ── */
+  header { padding: 64px 0 40px; border-bottom: 1px solid var(--border); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em;
+    color: var(--amber); text-transform: uppercase; margin: 0 0 12px;
+  }
+  h1 {
+    font-size: clamp(26px, 4vw, 38px); font-weight: 700; letter-spacing: 0.01em;
+    margin: 0 0 14px; text-wrap: balance; line-height: 1.4;
+  }
+  .lede { color: var(--muted); max-width: 40em; margin: 0; }
+  .lede strong { color: var(--text); font-weight: 600; }
+
+  /* ── sections ── */
+  section { padding: 56px 0 8px; }
+  h2 {
+    font-size: 22px; font-weight: 700; margin: 0 0 6px; text-wrap: balance;
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  }
+  .file {
+    font-family: var(--mono); font-size: 12px; font-weight: 400;
+    color: var(--muted); background: var(--surface2);
+    border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px;
+    white-space: nowrap;
+  }
+  .sec-intro { color: var(--muted); max-width: 44em; margin: 0 0 24px; }
+  .sec-intro strong, .note strong { color: var(--text); font-weight: 600; }
+
+  .pair {
+    display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 20px; align-items: start;
+  }
+  @media (max-width: 840px) { .pair { grid-template-columns: 1fr; } }
+
+  /* ── code ── */
+  .codebox {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden;
+  }
+  .codebox .bar {
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+    padding: 8px 14px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; gap: 12px;
+  }
+  .codebox pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto;
+    font-family: var(--mono); font-size: 13px; line-height: 1.75;
+    tab-size: 4;
+  }
+  code { font-family: var(--mono); font-size: 0.92em; background: var(--surface2); border-radius: 4px; padding: 1px 5px; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .kw  { color: #b18cff; }
+  .cm  { color: #5f5f78; }
+  .num { color: #ffb454; }
+  .fn  { color: #7fd3f7; }
+  .hl  { display: inline-block; width: 100%; background: rgba(99,155,255,0.07); }
+
+  /* 丸数字バッジ: コード行と図の注釈を対応させる */
+  .b {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    font-size: 11px; font-weight: 700; font-family: var(--mono);
+    color: #0e0e16; vertical-align: -3px; margin: 0 2px;
+  }
+  .b1 { background: var(--blue); }
+  .b2 { background: var(--amber); }
+  .b3 { background: var(--green); }
+  .b4 { background: #f38bb8; }
+
+  /* ── figure ── */
+  figure {
+    margin: 0; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { font-size: 13px; color: var(--muted); margin-top: 12px; line-height: 1.8; }
+  figcaption .b { width: 16px; height: 16px; font-size: 10px; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+
+  .note {
+    border-left: 3px solid var(--amber); background: var(--surface);
+    border-radius: 0 8px 8px 0; padding: 12px 18px; margin: 24px 0 0;
+    font-size: 14px; color: var(--muted); max-width: 44em;
+  }
+
+  /* ── glossary ── */
+  .glossary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  @media (max-width: 720px) { .glossary { grid-template-columns: 1fr; } }
+  .term {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 18px;
+  }
+  .term dt {
+    font-weight: 700; font-size: 15px; margin: 0 0 4px;
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  }
+  .term dt .en {
+    font-family: var(--mono); font-size: 11px; font-weight: 400;
+    color: var(--amber); letter-spacing: 0.04em;
+  }
+  .term dd { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.9; }
+  .term dd b { color: var(--text); font-weight: 600; }
+
+  /* ── demo ── */
+  .demo {
+    margin-top: 32px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+  }
+  .demo-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  #game {
+    background: var(--tile-a); border: 1px solid var(--border); border-radius: 6px;
+    max-width: 100%; height: auto; cursor: pointer; outline: none;
+  }
+  #game:focus-visible { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(99,155,255,0.25); }
+  .panel { flex: 1; min-width: 240px; font-size: 14px; }
+  .panel h3 { font-size: 14px; margin: 0 0 10px; color: var(--text); }
+  .readout {
+    font-family: var(--mono); font-size: 13px; line-height: 2;
+    font-variant-numeric: tabular-nums; color: var(--muted);
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 14px;
+  }
+  .readout b { color: var(--text); font-weight: 600; }
+  .readout .cb { color: var(--blue); } .readout .ca { color: var(--amber); }
+  .toggles { display: flex; flex-direction: column; gap: 8px; color: var(--muted); }
+  .toggles label { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+  .toggles input { accent-color: var(--blue); width: 15px; height: 15px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 12px; }
+  kbd {
+    font-family: var(--mono); font-size: 11px; color: var(--text);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px;
+  }
+  button.reset {
+    margin-top: 14px; font: 600 13px/1 inherit; color: var(--text);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 16px; cursor: pointer;
+  }
+  button.reset:hover { border-color: var(--blue); }
+  button.reset:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  /* ── flow diagram ── */
+  .flow {
+    display: flex; align-items: stretch; gap: 0; flex-wrap: wrap;
+    margin-top: 24px;
+  }
+  .flow .step {
+    flex: 1; min-width: 150px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px;
+    position: relative;
+  }
+  .flow .arrow {
+    align-self: center; color: var(--muted); padding: 0 10px; font-size: 18px;
+  }
+  .flow .step .t { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
+  .flow .step .f { font-family: var(--mono); font-size: 11px; color: var(--amber); margin-bottom: 6px; }
+  .flow .step .d { font-size: 12px; color: var(--muted); line-height: 1.7; }
+
+  footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--border);
+           font-size: 13px; color: var(--muted); }
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">game-starter / flix_game_engine</p>
+  <h1>なぜ box が動き、カメラが追いかけ、背景が流れるのか</h1>
+  <p class="lede">
+    星空に浮かぶアリーナの上で box を動かすと、カメラが少し遅れて追いかけ、床と二層の星が
+    違う速さで流れ、端まで行くとカメラだけが止まる。＋/− ボタンで滑らかに寄り引きし、
+    引き切るとアリーナの全景になる。この全部を作っているのは
+    <strong>World.flix の追従・補間計算</strong> と <strong>Main.flix の宣言数行</strong> だけです
+    （エンジン 0.1.4 で座標変換 → 0.1.5 で可視範囲 → 0.1.6 でマウスとズーム →
+    0.1.7 で防波堤と逆変換 → 0.1.8 で境界と視差、と段階的にエンジン側へ移りました）。
+    実際のコードと図を1行ずつ対比しながら解説します。
+  </p>
+</header>
+
+<!-- ═══════════════ 基礎用語 ═══════════════ -->
+<section>
+  <h2>まず基礎用語 — この5つが分かれば読める</h2>
+  <p class="sec-intro">
+    以降の解説で繰り返し出てくる言葉を先にまとめます。特に <b>dt</b> はすべての計算に登場します。
+  </p>
+  <div class="glossary">
+    <dl class="term">
+      <dt>フレーム <span class="en">frame</span></dt>
+      <dd>
+        ゲームはパラパラ漫画のように<b>1秒間に約60回</b>、画面を描き直しています。
+        その1回分が「1フレーム」。毎フレーム「キーを見る → 状態を進める → 描く」を繰り返すのが
+        ゲームループです。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt>dt <span class="en">delta time（デルタタイム）</span></dt>
+      <dd>
+        <b>前のフレームから今のフレームまでに実際に経った時間（秒）</b>。60fps なら約 0.0167 秒。
+        「1フレームで何px動かす」と書くと PC の速さで移動速度が変わってしまうので、
+        <b>速度(px/秒) × dt</b> の形で書きます。こうすると重い PC でも軽い PC でも
+        「1秒で 120px」という速さは同じになります。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt>world 座標 / screen 座標 <span class="en">world / screen</span></dt>
+      <dd>
+        <b>world 座標</b>は「ゲームの世界の中の住所」。無限に広く、box は (520, 280) のような
+        世界の中の位置を持ちます。<b>screen 座標</b>は「画面のどこに描くか」。
+        画面は 320×240 しかないので、world の一部を切り取って screen に写します。
+        この切り取り窓の位置を決めるのがカメラです。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt>カメラ <span class="en">camera / cam</span></dt>
+      <dd>
+        <b>「world のどの点を画面の中央に映すか」を表す1つの座標</b>。
+        このゲームではレンズも何もない、ただの <code>{ x, y }</code> です。
+        cam が右へ動けば、切り取り窓が右へずれるので、映っている物は左へ流れて見えます。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt>lerp <span class="en">linear interpolation（線形補間）</span></dt>
+      <dd>
+        2点の間を割合 t で混ぜる計算 <code>a + (b − a) × t</code>。
+        t = 0 なら a のまま、t = 1 なら b に一致、t = 0.1 なら「a から b へ 10% だけ近づいた点」。
+        毎フレームこれを繰り返すと<b>「残り距離の一定割合ずつ詰める」なめらかな追従</b>になります。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt>viewport / design サイズ <span class="en">viewport / design</span></dt>
+      <dd>
+        ゲームの論理的な画面サイズ（このプロジェクトでは <b>320×240</b>。project.json の
+        designWidth/Height）。実際の窓が何ピクセルでも、ゲーム内の計算はこのサイズで行い、
+        エンジンが窓に合わせて拡大します。
+      </dd>
+    </dl>
+  </div>
+</section>
+
+<!-- ═══════════════ Flix 文法 ═══════════════ -->
+<section>
+  <h2>Flix の読み方 — コード片に出てくる尖った文法</h2>
+  <p class="sec-intro">
+    このページのコードは <strong>Flix</strong>（JVM で動く関数型言語）です。一般的な言語と
+    見た目が違うところだけ先に押さえれば、あとは普通に読めます。8個だけです。
+  </p>
+  <div class="glossary">
+    <dl class="term">
+      <dt><code>world#x</code> <span class="en">フィールド参照は #</span></dt>
+      <dd><code>.</code>（ドット）ではなく <code>#</code> でレコードの中身を取る。
+        <code>world#cam#x</code> のように連鎖もできる。</dd>
+    </dl>
+    <dl class="term">
+      <dt><code>{ x = nx | world }</code> <span class="en">レコード更新</span></dt>
+      <dd>「x だけ差し替えて、<b>残りは world のまま</b>」。<code>|</code> の右が土台。
+        値は不変なので「書き換える」のではなく毎回新しい World を作る —
+        <code>World.step</code> が毎フレームやっているのはこれ。</dd>
+    </dl>
+    <dl class="term">
+      <dt><code>type alias World = { … }</code> <span class="en">構造的レコード型</span></dt>
+      <dd>型は名前でなく<b>形</b>で決まる。World もただの別名（alias）で、同じ形のレコードなら
+        同じ型として通る。クラス定義は存在しない。</dd>
+    </dl>
+    <dl class="term">
+      <dt><code>f(center, design = d)</code> <span class="en">名前渡し引数</span></dt>
+      <dd>同じ型（Vec2 同士など）の引数が並ぶと取り違えるので、ラベルを必須にできる。
+        実体は「1ラベルのレコードで包む」糖衣構文。エンジンの camera API が多用している。</dd>
+    </dl>
+    <dl class="term">
+      <dt><code>|&gt;</code> <span class="en">パイプ演算子</span></dt>
+      <dd><code>x |&gt; f |&gt; g</code> は <code>g(f(x))</code>。Main の
+        <code>App.makeWith(…) |&gt; App.addSystem(…) |&gt; …</code> はこれでビルダーを繋いでいる。</dd>
+    </dl>
+    <dl class="term">
+      <dt><code>def speed(): Float64 = 120.0</code> <span class="en">定数も0引数関数</span></dt>
+      <dd>トップレベルに変数は置けないため、定数は引数なしの関数として書く。
+        呼ぶときも <code>speed()</code> と括弧が付く。</dd>
+    </dl>
+    <dl class="term">
+      <dt><code>\ IO</code>・<code>\ ef</code> <span class="en">効果システム（Flix の看板機能）</span></dt>
+      <dd>関数型の後ろの <code>\ …</code> は「外の世界に触れるか」の宣言で、
+        <b>何も書かなければ純粋</b>だとコンパイラが保証する。World.step や View.frame が
+        純粋なのは規約ではなく型。main だけが <code>run { … } with …</code> で
+        ハンドラを張り、窓・時計・描画の副作用を引き受ける。</dd>
+    </dl>
+    <dl class="term">
+      <dt><code>forM (…) yield</code> <span class="en">モナド内包</span></dt>
+      <dd>Scala の for 内包表記と同じ。List はモナドなので
+        <code>forM (r &lt;- rows; c &lt;- cols) yield tile(…)</code> が
+        二重ループのリスト生成になる（その3の背景タイルで使用）。</dd>
+    </dl>
+  </div>
+</section>
+
+<!-- ═══════════════ デモ ═══════════════ -->
+<section>
+  <h2>次に触ってみる — ブラウザ上の再現デモ</h2>
+  <p class="sec-intro">
+    ゲームと同じロジック（速度 120px/秒・追従率 5.0・32px タイル・カメラ境界・二層の星空）を
+    JavaScript で再現したものです。<strong>「カメラ追従」を切る</strong>と、同じ入力でも
+    box がすぐ画面外へ出てしまうことが分かります。
+  </p>
+  <div class="demo">
+    <div class="demo-row">
+      <canvas id="game" width="640" height="480" tabindex="0"
+              aria-label="追従カメラのデモ。クリックしてから矢印キーで操作"></canvas>
+      <div class="panel">
+        <h3>いまの状態（World の中身）</h3>
+        <div class="readout" id="readout">
+          box <b class="cb">(160.0, 120.0)</b><br>
+          cam <b class="ca">(160.0, 120.0)</b><br>
+          zoom <b>1.00</b> → 目標 <b>1.00</b><br>
+          画面上の box <b>(160.0, 120.0)</b>
+        </div>
+        <div class="toggles">
+          <label><input type="checkbox" id="follow" checked> カメラ追従（World.step の cam 更新）</label>
+          <label><input type="checkbox" id="cross" checked> カメラ中心 <span class="b b2" aria-hidden="true">＋</span> を表示</label>
+        </div>
+        <button class="reset" id="reset">はじめの位置に戻す</button>
+        <p class="hint">キャンバスをクリックしてから <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>（または <kbd>WASD</kbd>）で移動。
+        右上の <b>＋/−</b> で寄り引き。<b>端まで歩く</b>とリングの向こうに星の余白が見えてカメラが止まり
+        （⛔限界 が readout に出る）、<b>−を押し切る</b>とアリーナが星空に浮かぶ全景になる。
+        縁に沿って歩くと星が床よりゆっくり流れる＝視差。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ 全体の流れ ═══════════════ -->
+<section>
+  <h2>全体の流れ — 毎フレームこの順で関数が呼ばれる</h2>
+  <p class="sec-intro">
+    Main.flix はこのパイプラインを宣言しているだけです。状態は <code>World</code> という
+    ただのレコードで、毎フレーム「入力で次の World を作る → World を絵に写す」を繰り返します。
+  </p>
+  <div class="flow">
+    <div class="step">
+      <div class="t">キー入力</div>
+      <div class="f">App（エンジン側）</div>
+      <div class="d">押されているキーの集合と経過時間 dt を Frame にまとめる</div>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step">
+      <div class="t">入力を軸値へ</div>
+      <div class="f">Controls.inputOf</div>
+      <div class="d">← → を x = −1/0/+1、↑ ↓ を y = −1/0/+1 に畳む（変更なし）</div>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step">
+      <div class="t">状態を1歩進める</div>
+      <div class="f">World.step</div>
+      <div class="d"><b>box を動かし、cam を box へ寄せる</b>（今回の本体その1）</div>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step">
+      <div class="t">絵に写す</div>
+      <div class="f">View.frame</div>
+      <div class="d"><b>world 座標 → 画面座標へ変換して描く</b>（今回の本体その2）</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════ World.step ═══════════════ -->
+<section>
+  <h2>その1: box は入力どおり、カメラは lerp で遅れて追う <span class="file">src/World.flix</span></h2>
+  <p class="sec-intro">
+    World には box の位置 <code>x, y</code> と、カメラの中心 <code>cam</code> が入っています。
+    box とカメラを<strong>別々の速さで動かす</strong>のがポイントです。
+  </p>
+  <div class="pair">
+    <div class="codebox">
+      <div class="bar"><span>World.step — 毎フレーム呼ばれる</span><span>flix</span></div>
+      <pre><code><span class="cm">// 追従仕様: deadzone = 不感帯の幅, k = 1秒あたりの寄せ率</span>
+<span class="kw">pub def</span> <span class="fn">follow</span>(): CameraRig.Follow =
+    { deadzone = <span class="num">0.0</span>, k = <span class="num">5.0</span> }                <span class="b b2">2</span>
+
+<span class="kw">pub def</span> <span class="fn">step</span>(input, dt, world): World =
+    <span class="hl"><span class="kw">let</span> nx = world#x + input#x * <span class="fn">speed</span>() * dt;   <span class="b b1">1</span></span>
+    <span class="kw">let</span> ny = world#y + input#y * <span class="fn">speed</span>() * dt;
+    { x = nx, y = ny,
+    <span class="hl">  cam = { x = cam#x + CameraRig.<span class="fn">followDelta</span>(  <span class="b b3">3</span></span>
+                    <span class="fn">follow</span>(), dt, nx, cam#x),
+              y = cam#y + CameraRig.<span class="fn">followDelta</span>(
+                    <span class="fn">follow</span>(), dt, ny, cam#y) }
+      | world }
+
+<span class="cm">// エンジン側（CameraRig.followDelta）。deadzone=0 なら実質:</span>
+<span class="cm">//   (target − current) × min(1, k×dt)   ← lerp そのもの</span></code></pre>
+    </div>
+    <figure>
+      <svg viewBox="0 0 440 260" role="img" aria-label="カメラが box との距離の一部だけ毎フレーム詰める図">
+        <!-- viewport frame -->
+        <rect x="20" y="20" width="400" height="200" rx="6" fill="#12121c" stroke="#2a2a3a"/>
+        <!-- checker hint -->
+        <g opacity="0.5">
+          <rect x="20" y="20" width="50" height="50" fill="#24242e"/><rect x="120" y="20" width="50" height="50" fill="#24242e"/>
+          <rect x="70" y="70" width="50" height="50" fill="#24242e"/><rect x="170" y="70" width="50" height="50" fill="#24242e"/>
+          <rect x="20" y="120" width="50" height="50" fill="#24242e"/><rect x="120" y="120" width="50" height="50" fill="#24242e"/>
+          <rect x="70" y="170" width="50" height="50" fill="#24242e"/><rect x="170" y="170" width="50" height="50" fill="#24242e"/>
+          <rect x="220" y="20" width="50" height="50" fill="#24242e"/><rect x="270" y="70" width="50" height="50" fill="#24242e"/>
+          <rect x="220" y="120" width="50" height="50" fill="#24242e"/><rect x="270" y="170" width="50" height="50" fill="#24242e"/>
+          <rect x="320" y="20" width="50" height="50" fill="#24242e"/><rect x="370" y="70" width="50" height="50" fill="#24242e"/>
+          <rect x="320" y="120" width="50" height="50" fill="#24242e"/><rect x="370" y="170" width="50" height="50" fill="#24242e"/>
+        </g>
+        <!-- cam center -->
+        <g stroke="#ffb454" stroke-width="2">
+          <line x1="150" y1="112" x2="170" y2="112"/><line x1="160" y1="102" x2="160" y2="122"/>
+        </g>
+        <text x="160" y="150" fill="#ffb454" font-size="12" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">cam（画面中央に映る点）</text>
+        <!-- lerp arrow -->
+        <line x1="172" y1="112" x2="288" y2="112" stroke="#ffb454" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ah)"/>
+        <defs><marker id="ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="#ffb454"/></marker></defs>
+        <text x="230" y="98" fill="#ffb454" font-size="12" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">(nx − cam) × t</text>
+        <!-- box -->
+        <rect x="300" y="100" width="24" height="24" fill="#639bff"/>
+        <text x="312" y="150" fill="#639bff" font-size="12" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">box (nx, ny)</text>
+        <!-- badges -->
+        <circle cx="336" cy="94" r="9" fill="#639bff"/><text x="336" y="98" font-size="11" font-weight="700" text-anchor="middle" fill="#0e0e16">1</text>
+        <circle cx="230" cy="126" r="9" fill="#ffb454"/><text x="230" y="130" font-size="11" font-weight="700" text-anchor="middle" fill="#0e0e16">3</text>
+        <text x="220" y="245" fill="#9c9cb4" font-size="12" text-anchor="middle">毎フレーム、残り距離の t 割だけカメラが box に近づく</text>
+      </svg>
+      <figcaption>
+        <span class="b b1">1</span> box は入力そのまま <code>速度 120px/秒 × dt</code> だけ進む。<br>
+        <span class="b b2">2</span> 追従仕様はエンジン(0.1.4)の <code>CameraRig.Follow</code> で宣言する。
+        <code>k × dt</code> ≒ 1フレームで詰める割合（60fps なら約 8%）。内部の <code>min(1, k×dt)</code> は
+        処理落ちで dt が大きくなっても行き過ぎない安全弁。<br>
+        <span class="b b3">3</span> <code>followDelta</code> は「残りの距離 × min(1, k×dt)」の移動量を返す —
+        deadzone = 0 なら <code>cam + (box − cam) × t</code> の lerp（線形補間）そのもの。
+        <strong>残り距離に比例して詰める</strong>ので、離れるほど速く・近づくほどゆっくり追いつく。
+        キーを離すと box が止まり、cam だけが寄っていくので box は画面中央へ戻る。
+        <code>deadzone</code> を広げると「帯の中では据え置き」の Godot 風の遊びも作れる。
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ═══════════════ view transform ═══════════════ -->
+<section>
+  <h2>その2: 「カメラが動く」の正体は座標の引き算 <span class="file">src/Main.flix + エンジン</span></h2>
+  <p class="sec-intro">
+    エンジン 0.1.4 から <code>App.withCamera</code> ができました。ゲームは
+    <strong>「world のどこを画面中央に映したいか」を1行で宣言するだけ</strong>で、
+    すべての描画物の置き場所から cam を引いて画面中央へずらす仕事はエンジンが引き受けます。
+    View は world 座標のまま絵を組むだけになりました。
+  </p>
+  <div class="pair">
+    <div class="codebox">
+      <div class="bar"><span>Main.flix / View.flix — カメラは宣言するだけ</span><span>flix</span></div>
+      <pre><code><span class="cm">// Main.flix — App にカメラを1行で繋ぐ</span>
+App.makeWith(World.initial)
+    |&gt; App.addSystem(Controls.step)
+    |&gt; App.withView(View.frame)
+<span class="hl">    |&gt; App.<span class="fn">withCamera</span>(View.cameraCenter)      <span class="b b2">1</span></span>
+    |&gt; App.launch
+
+<span class="cm">// View.flix — 変換コードは無い。world 座標で組むだけ。</span>
+<span class="cm">// ctx（0.1.5 の ViewCtx）から「見えている範囲」も貰える</span>
+<span class="kw">pub def</span> <span class="fn">cameraCenter</span>(world): Vec2.Vec2 = world#cam
+
+<span class="hl"><span class="kw">pub def</span> <span class="fn">frame</span>(ctx: App.ViewCtx, world): List[Render.PlacedItem] = <span class="b b1">2</span></span>
+    <span class="fn">background</span>(ctx#visible) ::: <span class="fn">player</span>(world) :: Nil
+
+<span class="cm">// エンジン側（CameraRig.centerOn）。やっていることは:</span>
+<span class="cm">//   screen = world − cam + 画面サイズ/2      </span><span class="b b3">3</span></code></pre>
+    </div>
+    <figure>
+      <svg viewBox="0 0 440 250" role="img" aria-label="world座標からscreen座標への変換図">
+        <!-- world plane -->
+        <rect x="15" y="30" width="185" height="170" rx="6" fill="#12121c" stroke="#2a2a3a"/>
+        <text x="107" y="20" fill="#9c9cb4" font-size="12" text-anchor="middle">world 座標（無限に広い）</text>
+        <g opacity="0.45">
+          <rect x="15" y="30" width="37" height="34" fill="#24242e"/><rect x="89" y="30" width="37" height="34" fill="#24242e"/><rect x="163" y="30" width="37" height="34" fill="#24242e"/>
+          <rect x="52" y="64" width="37" height="34" fill="#24242e"/><rect x="126" y="64" width="37" height="34" fill="#24242e"/>
+          <rect x="15" y="98" width="37" height="34" fill="#24242e"/><rect x="89" y="98" width="37" height="34" fill="#24242e"/><rect x="163" y="98" width="37" height="34" fill="#24242e"/>
+          <rect x="52" y="132" width="37" height="34" fill="#24242e"/><rect x="126" y="132" width="37" height="34" fill="#24242e"/>
+          <rect x="15" y="166" width="37" height="34" fill="#24242e"/><rect x="89" y="166" width="37" height="34" fill="#24242e"/><rect x="163" y="166" width="37" height="34" fill="#24242e"/>
+        </g>
+        <!-- cam & box in world -->
+        <g stroke="#ffb454" stroke-width="2">
+          <line x1="120" y1="115" x2="136" y2="115"/><line x1="128" y1="107" x2="128" y2="123"/>
+        </g>
+        <text x="128" y="140" fill="#ffb454" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">cam(500,300)</text>
+        <rect x="146" y="86" width="16" height="16" fill="#639bff"/>
+        <text x="154" y="78" fill="#639bff" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">box(520,280)</text>
+
+        <!-- transform arrow -->
+        <line x1="205" y1="115" x2="245" y2="115" stroke="#7ecf9a" stroke-width="2" marker-end="url(#ah2)"/>
+        <defs><marker id="ah2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="#7ecf9a"/></marker></defs>
+        <circle cx="225" cy="95" r="9" fill="#7ecf9a"/><text x="225" y="99" font-size="11" font-weight="700" text-anchor="middle" fill="#0e0e16">3</text>
+
+        <!-- screen plane -->
+        <rect x="250" y="45" width="175" height="140" rx="6" fill="#12121c" stroke="#639bff" stroke-opacity="0.6"/>
+        <text x="337" y="35" fill="#9c9cb4" font-size="12" text-anchor="middle">screen 座標（320×240）</text>
+        <g opacity="0.45">
+          <rect x="250" y="45" width="35" height="35" fill="#24242e"/><rect x="320" y="45" width="35" height="35" fill="#24242e"/><rect x="390" y="45" width="35" height="35" fill="#24242e"/>
+          <rect x="285" y="80" width="35" height="35" fill="#24242e"/><rect x="355" y="80" width="35" height="35" fill="#24242e"/>
+          <rect x="250" y="115" width="35" height="35" fill="#24242e"/><rect x="320" y="115" width="35" height="35" fill="#24242e"/><rect x="390" y="115" width="35" height="35" fill="#24242e"/>
+          <rect x="285" y="150" width="35" height="35" fill="#24242e"/><rect x="355" y="150" width="35" height="35" fill="#24242e"/>
+        </g>
+        <g stroke="#ffb454" stroke-width="2">
+          <line x1="329" y1="115" x2="345" y2="115"/><line x1="337" y1="107" x2="337" y2="123"/>
+        </g>
+        <text x="337" y="140" fill="#ffb454" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">→ (160,120) 中央</text>
+        <rect x="355" y="86" width="16" height="16" fill="#639bff"/>
+        <text x="363" y="78" fill="#639bff" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">→ (180,100)</text>
+
+        <text x="220" y="225" fill="#9c9cb4" font-size="12" text-anchor="middle">cam との相対位置だけが画面に残る → cam が動けば全部が逆方向へ流れる</text>
+      </svg>
+      <figcaption>
+        <span class="b b2">1</span> <code>withCamera</code> に渡すのは「World → 画面中央に映したい world 座標」の純粋関数。
+        カメラという特別なオブジェクトは無く、World の <code>cam</code> を返すだけ。<br>
+        <span class="b b1">2</span> View は背景もプレイヤーも <strong>world 座標のまま1本のリストで返すだけ</strong>。
+        エンジンが毎フレーム、全描画物に同じずらしを一括適用する（HUD 用の
+        <code>withHudView</code> に繋いだ絵だけはずらされない）。<br>
+        <span class="b b3">3</span> エンジンの中身は今も <code>screen = world − cam + 画面サイズ/2</code> の引き算1つ。
+        cam が右へ 10 動くと、すべての screen 座標が左へ 10 ずれる — これが「背景が逆方向に流れる」理由。
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ═══════════════ background tiles ═══════════════ -->
+<section>
+  <h2>その3: 背景は「見える範囲のタイル」だけを毎フレーム計算する <span class="file">src/View.flix</span></h2>
+  <p class="sec-intro">
+    市松模様はどこかに保存されていません。<strong>カメラ位置から「いま画面に映るタイル番号」を
+    割り出して、その場で並べ直している</strong>だけです。だからどこまで移動しても途切れません。
+  </p>
+  <div class="pair">
+    <div class="codebox">
+      <div class="bar"><span>View.background — 可視範囲のタイルを列挙</span><span>flix</span></div>
+      <pre><code><span class="cm">// 0.1.5: 「見えている矩形」は frame が ctx#visible として受け取り、</span>
+<span class="cm">// そのまま渡ってくる。cam も design もこの関数はもう知らない</span>
+<span class="kw">def</span> <span class="fn">background</span>(visible: Rect2.Rect2): List[Render.PlacedItem] =
+    <span class="kw">let</span> ts = <span class="fn">tileSize</span>();  <span class="cm">// 32px</span>
+    <span class="hl"><span class="kw">let</span> col0 = <span class="fn">tileIndex</span>(visible#position#x / ts);          <span class="b b3">1</span></span>
+    <span class="kw">let</span> row0 = <span class="fn">tileIndex</span>(visible#position#y / ts);
+    <span class="hl"><span class="kw">let</span> cols = <span class="fn">tileIndex</span>(visible#size#x / ts) + <span class="num">2</span>;      <span class="b b2">2</span></span>
+    <span class="kw">let</span> rows = <span class="fn">tileIndex</span>(visible#size#y / ts) + <span class="num">2</span>;
+    <span class="cm">// List はモナドなので forM がリスト内包として使える（行×列の総当たり）</span>
+    <span class="kw">forM</span> (r &lt;- List.range(<span class="num">0</span>, rows); c &lt;- List.range(<span class="num">0</span>, cols))
+        <span class="kw">yield</span> <span class="fn">tile</span>(col0 + c, row0 + r)
+
+<span class="cm">// 市松の1枚（タイル番号 → world 座標の PlacedItem）</span>
+<span class="kw">def</span> <span class="fn">tile</span>(col: Int32, row: Int32): Render.PlacedItem =
+    <span class="kw">let</span> ts = <span class="fn">tileSize</span>();
+    <span class="hl"><span class="kw">let</span> color = <span class="kw">if</span> (Int32.modulo(col + row, <span class="num">2</span>) == <span class="num">0</span>)     <span class="b b4">3</span></span>
+                    <span class="fn">tileColorA</span>() <span class="kw">else</span> <span class="fn">tileColorB</span>();
+    <span class="hl">{ at = { x = Int32.toFloat64(col) * ts, … },            <span class="b b1">4</span></span>
+      item = Render.<span class="fn">box</span>(…) }</code></pre>
+    </div>
+    <figure>
+      <svg viewBox="0 0 440 280" role="img" aria-label="カメラの可視範囲とタイル番号の対応図">
+        <!-- big tile grid -->
+        <g>
+          <rect x="10" y="10" width="52" height="52" fill="#30303c"/><rect x="62" y="10" width="52" height="52" fill="#24242e"/><rect x="114" y="10" width="52" height="52" fill="#30303c"/><rect x="166" y="10" width="52" height="52" fill="#24242e"/><rect x="218" y="10" width="52" height="52" fill="#30303c"/><rect x="270" y="10" width="52" height="52" fill="#24242e"/><rect x="322" y="10" width="52" height="52" fill="#30303c"/><rect x="374" y="10" width="52" height="52" fill="#24242e"/>
+          <rect x="10" y="62" width="52" height="52" fill="#24242e"/><rect x="62" y="62" width="52" height="52" fill="#30303c"/><rect x="114" y="62" width="52" height="52" fill="#24242e"/><rect x="166" y="62" width="52" height="52" fill="#30303c"/><rect x="218" y="62" width="52" height="52" fill="#24242e"/><rect x="270" y="62" width="52" height="52" fill="#30303c"/><rect x="322" y="62" width="52" height="52" fill="#24242e"/><rect x="374" y="62" width="52" height="52" fill="#30303c"/>
+          <rect x="10" y="114" width="52" height="52" fill="#30303c"/><rect x="62" y="114" width="52" height="52" fill="#24242e"/><rect x="114" y="114" width="52" height="52" fill="#30303c"/><rect x="166" y="114" width="52" height="52" fill="#24242e"/><rect x="218" y="114" width="52" height="52" fill="#30303c"/><rect x="270" y="114" width="52" height="52" fill="#24242e"/><rect x="322" y="114" width="52" height="52" fill="#30303c"/><rect x="374" y="114" width="52" height="52" fill="#24242e"/>
+          <rect x="10" y="166" width="52" height="52" fill="#24242e"/><rect x="62" y="166" width="52" height="52" fill="#30303c"/><rect x="114" y="166" width="52" height="52" fill="#24242e"/><rect x="166" y="166" width="52" height="52" fill="#30303c"/><rect x="218" y="166" width="52" height="52" fill="#24242e"/><rect x="270" y="166" width="52" height="52" fill="#30303c"/><rect x="322" y="166" width="52" height="52" fill="#24242e"/><rect x="374" y="166" width="52" height="52" fill="#30303c"/>
+        </g>
+        <!-- viewport -->
+        <rect x="88" y="44" width="252" height="150" fill="none" stroke="#ffb454" stroke-width="2.5" stroke-dasharray="7 5" rx="4"/>
+        <text x="214" y="38" fill="#ffb454" font-size="12" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">画面（cam を中心に 320×240）</text>
+        <g stroke="#ffb454" stroke-width="2">
+          <line x1="206" y1="119" x2="222" y2="119"/><line x1="214" y1="111" x2="214" y2="127"/>
+        </g>
+        <!-- col0/row0 tile -->
+        <rect x="62" y="10" width="52" height="52" fill="none" stroke="#7ecf9a" stroke-width="2.5"/>
+        <circle cx="74" cy="24" r="9" fill="#7ecf9a"/><text x="74" y="28" font-size="11" font-weight="700" text-anchor="middle" fill="#0e0e16">1</text>
+        <text x="88" y="238" fill="#7ecf9a" font-size="12" font-family="ui-monospace,Menlo,monospace">↑ (col0, row0) = 画面左上の角を含むタイル</text>
+        <!-- +2 extension -->
+        <path d="M 340 80 L 374 80" stroke="#ffb454" stroke-width="2" marker-end="url(#ah3)"/>
+        <defs><marker id="ah3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="#ffb454"/></marker></defs>
+        <circle cx="357" cy="98" r="9" fill="#ffb454"/><text x="357" y="102" font-size="11" font-weight="700" text-anchor="middle" fill="#0e0e16">2</text>
+        <text x="220" y="262" fill="#9c9cb4" font-size="12" text-anchor="middle">端のタイルは半分だけ映る → 左右それぞれ1枚余分に敷いて隙間を防ぐ（+2）</text>
+      </svg>
+      <figcaption>
+        <span class="b b3">1</span> <code>visible</code> は「cam を中央に映したとき画面に見える world の矩形」
+        （左上 = <code>cam − design/2</code>、大きさ = design）。エンジンが計算して ViewCtx で渡してくる。
+        その左上をタイル辺 32 で割って床関数に通すと「左端が乗っているタイルの番号」になる。<br>
+        <span class="b b2">2</span> 320÷32 = 10 枚で幅は覆えるが、スクロール中は左右とも端が欠けるので
+        <code>+2</code> 枚の余白を持たせる。<br>
+        <span class="b b4">3</span> <code>(col + row) が偶数か</code>で2色を交互に。番号は world に固定なので、
+        カメラが動いても<strong>模様は地面に貼り付いたまま</strong>になる。<br>
+        <span class="b b1">4</span> 置き場所は <code>タイル番号 × 32</code> の world 座標。あとは その2 の一括変換が画面に映してくれる。
+      </figcaption>
+    </figure>
+  </div>
+
+  <div class="note">
+    <strong>なぜ <code>Int32.modulo</code> なのか:</strong>
+    左や上へ進むとタイル番号は負になります（… −2, −1, 0, 1 …）。
+    多くの言語の <code>%</code>（剰余）は <code>-3 % 2 == -1</code> を返すので「== 0 か否か」の交互パターンが
+    負の側で崩れますが、Flix の <code>Int32.modulo</code> は常に 0 か 1 を返すため、
+    原点をまたいでも市松が乱れません。
+  </div>
+</section>
+
+<!-- ═══════════════ zoom ═══════════════ -->
+<section>
+  <h2>その4: ズームは「目標値・現在値の2段構え」+ 引き算に×zoomを1つ足すだけ <span class="file">src/World.flix ほか</span></h2>
+  <p class="sec-intro">
+    右上の <strong>＋/− ボタン</strong>をクリックすると寄り引きできます（エンジン 0.1.6 で
+    Frame にマウスが、カメラ合成に zoom が入りました）。仕掛けは3層: ボタンは<strong>目標値を
+    1段動かすだけ</strong>、現在値は毎フレーム目標へ lerp（カメラ追従と同じ手口）、
+    エンジンは引き算の式に <strong>× zoom を1つ</strong>足して大きさも一緒に伸縮します。
+  </p>
+  <div class="pair">
+    <div class="codebox">
+      <div class="bar"><span>クリック → 目標 → 補間 → 合成 の4段</span><span>flix</span></div>
+      <pre><code><span class="cm">// Controls.flix — クリック判定。0.1.6 の Frame には</span>
+<span class="cm">// cursor（design 座標）と mouseClicked（エッジ）が焼かれている</span>
+<span class="kw">pub def</span> <span class="fn">zoomButtons</span>(frame, world) =
+    <span class="hl"><span class="kw">let</span> overPlus = Hud.<span class="fn">inCircle</span>(                    <span class="b b1">1</span></span>
+        Hud.<span class="fn">plusCenter</span>(frame#viewport), frame#cursor);
+    ...
+    <span class="hl"><span class="kw">if</span> (frame#mouseClicked <span class="kw">and</span> overPlus)             <span class="b b2">2</span></span>
+        World.<span class="fn">zoomIn</span>(hovered) ...
+
+<span class="cm">// World.flix — ボタンは目標値を1段変えるだけ</span>
+<span class="kw">pub def</span> <span class="fn">zoomIn</span>(world) =
+    { zoomTarget = clamp(world#zoomTarget * <span class="num">1.25</span>) | world }
+
+<span class="cm">// World.step — 現在値が目標へ lerp（追従カメラと同じ）</span>
+<span class="hl">zoom = world#zoom + (world#zoomTarget - world#zoom)    <span class="b b3">3</span></span>
+            * min(<span class="num">1.0</span>, <span class="num">8.0</span> * dt)
+
+<span class="cm">// Main.flix — エンジンへは宣言1行ずつ</span>
+|&gt; App.<span class="fn">withZoom</span>(w -&gt; w#zoom)
+|&gt; App.<span class="fn">withHudView</span>(View.hud)   <span class="cm">// +/− ボタンの絵（画面固定）</span>
+
+<span class="cm">// エンジン側（composeSceneZoomed）。その2の式に ×zoom が入るだけ:</span>
+<span class="cm">//   screen = (world − cam) × zoom + 画面サイズ/2   </span><span class="b b4">4</span>
+<span class="cm">//   大きさも × zoom、見えている範囲は design / zoom</span></code></pre>
+    </div>
+    <figure>
+      <svg viewBox="0 0 440 250" role="img" aria-label="ズーム1倍と2倍の見え方の比較図">
+        <!-- zoom 1 -->
+        <rect x="15" y="35" width="185" height="140" rx="6" fill="#12121c" stroke="#2a2a3a"/>
+        <text x="107" y="25" fill="#9c9cb4" font-size="12" text-anchor="middle">zoom = 1（見える範囲 320×240）</text>
+        <g opacity="0.45">
+          <rect x="15" y="35" width="37" height="35" fill="#24242e"/><rect x="89" y="35" width="37" height="35" fill="#24242e"/><rect x="163" y="35" width="37" height="35" fill="#24242e"/>
+          <rect x="52" y="70" width="37" height="35" fill="#24242e"/><rect x="126" y="70" width="37" height="35" fill="#24242e"/>
+          <rect x="15" y="105" width="37" height="35" fill="#24242e"/><rect x="89" y="105" width="37" height="35" fill="#24242e"/><rect x="163" y="105" width="37" height="35" fill="#24242e"/>
+          <rect x="52" y="140" width="37" height="35" fill="#24242e"/><rect x="126" y="140" width="37" height="35" fill="#24242e"/>
+        </g>
+        <rect x="99" y="97" width="16" height="16" fill="#639bff"/>
+        <!-- 可視範囲を示す枠 -->
+        <rect x="80" y="79" width="55" height="52" fill="none" stroke="#7ecf9a" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="107" y="192" fill="#7ecf9a" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">↑ zoom=2 で見える範囲</text>
+        <!-- arrow -->
+        <line x1="205" y1="105" x2="235" y2="105" stroke="#ffb454" stroke-width="2" marker-end="url(#ah4)"/>
+        <defs><marker id="ah4" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="#ffb454"/></marker></defs>
+        <text x="220" y="93" fill="#ffb454" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">×2</text>
+        <!-- zoom 2 -->
+        <rect x="240" y="35" width="185" height="140" rx="6" fill="#12121c" stroke="#2a2a3a"/>
+        <text x="332" y="25" fill="#9c9cb4" font-size="12" text-anchor="middle">zoom = 2（見える範囲 160×120）</text>
+        <g opacity="0.45">
+          <rect x="240" y="35" width="74" height="70" fill="#24242e"/><rect x="388" y="35" width="37" height="70" fill="#24242e"/>
+          <rect x="314" y="105" width="74" height="70" fill="#24242e"/><rect x="240" y="140" width="37" height="35" fill="#24242e"/>
+        </g>
+        <rect x="316" y="89" width="32" height="32" fill="#639bff"/>
+        <!-- HUD buttons stay same size -->
+        <g>
+          <circle cx="407" cy="53" r="11" fill="#32374b" stroke="#7385a6" stroke-width="1.5"/>
+          <text x="407" y="57" fill="#ebf0ff" font-size="12" font-weight="600" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">+</text>
+          <circle cx="407" cy="81" r="11" fill="#32374b" stroke="#7385a6" stroke-width="1.5"/>
+          <text x="407" y="85" fill="#ebf0ff" font-size="12" font-weight="600" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">−</text>
+        </g>
+        <text x="332" y="192" fill="#9c9cb4" font-size="11" text-anchor="middle">box もタイルも2倍・HUD ボタンはそのまま</text>
+        <text x="220" y="225" fill="#9c9cb4" font-size="12" text-anchor="middle">寄ると「見える world の範囲」が狭くなり、映る物は大きくなる。HUD には掛けない</text>
+      </svg>
+      <figcaption>
+        <span class="b b1">1</span> 当たり判定は「カーソルと円の中心の距離 ≤ 半径」だけ。ボタンは画面に
+        貼り付いているので、<code>frame#cursor</code>（screen 座標）をそのまま比べられる。<br>
+        <span class="b b2">2</span> <code>mouseClicked</code> はキーの justPressed と同じ<strong>エッジ</strong>
+        （押した瞬間だけ true）。押しっぱなしで連打にならない。<br>
+        <span class="b b3">3</span> ボタンが変えるのは <code>zoomTarget</code> だけで、実際の
+        <code>zoom</code> は毎フレーム目標へ lerp — カメラ追従とまったく同じ手口なので、
+        カチッと切り替わらず<strong>ぬるっと寄る</strong>。<br>
+        <span class="b b4">4</span> エンジンの仕事は その2 の引き算に ×zoom を掛けるだけ。位置も大きさも
+        同じ倍率で伸縮し、<code>ctx#visible</code>（見えている範囲）も design/zoom に狭まるので、
+        背景タイルの敷き詰めは<strong>何も変えずに</strong>ズームに追従する。
+      </figcaption>
+    </figure>
+  </div>
+
+  <div class="note">
+    <strong>0.1.7 の仕上げ（レビューで塞いだ端）:</strong>
+    ① zoom には防波堤 <code>CameraRig.safeZoom</code> が入り、0 以下・NaN・Infinity のような
+    不正な倍率は安全な範囲（0.01〜1000）へ丸められる — <code>1.0 / 距離</code> のような
+    うっかりゼロ除算でも画面が壊れない（ゲーム側の事前検査は不要）。
+    ② 逆変換 <code>toWorldPosZoomed</code>（screen → world = <code>(screen − 中央) ÷ zoom + cam</code>）が
+    追加され、次の定番「<strong>ズーム中に world の物をクリックする</strong>」が正しく書ける。
+    順変換で screen へ移した点を逆変換に通すと元の world 座標へ戻る（往復不変条件）ことは
+    エンジンのテストが固定している。
+  </div>
+</section>
+
+<!-- ═══════════════ bounds + parallax ═══════════════ -->
+<section>
+  <h2>その5: 端で止まるカメラと星空の視差 — ショーケースの完成 <span class="file">0.1.8</span></h2>
+  <p class="sec-intro">
+    エンジン 0.1.8 で入った最後の2機能。<strong>境界（withCameraBounds）</strong>は
+    「映してよい world の矩形」の宣言で、視界の縁がそこを出ないようカメラが止まる。
+    <strong>視差（addParallaxLayer）</strong>はカメラの動きに factor を掛けた速さで流れる
+    背景レイヤ。ゲーム側の追加はどちらも <strong>Main の宣言だけ</strong>です。
+  </p>
+  <div class="pair">
+    <div class="codebox">
+      <div class="bar"><span>Main / World / View — 宣言と、余白のレベルデザイン</span><span>flix</span></div>
+      <pre><code><span class="cm">// Main.flix — 3行足すだけ</span>
+<span class="hl">|&gt; App.<span class="fn">withCameraBounds</span>(_ -&gt; World.<span class="fn">cameraBounds</span>()) <span class="b b1">1</span></span>
+|&gt; App.<span class="fn">addParallaxLayer</span>(<span class="num">0.25</span>, View.farStars)
+<span class="hl">|&gt; App.<span class="fn">addParallaxLayer</span>(<span class="num">0.55</span>, View.nearStars)     <span class="b b2">2</span></span>
+
+<span class="cm">// World.flix — 映してよい範囲 = アリーナ + 星空の余白</span>
+<span class="kw">pub def</span> <span class="fn">cameraBounds</span>(): Rect2.Rect2 =
+    <span class="kw">let</span> a = <span class="fn">arena</span>();
+<span class="hl">    <span class="kw">let</span> m = <span class="num">128.0</span>;  <span class="cm">// ← 余白ゼロだと星が一生映らない</span> <span class="b b3">3</span></span>
+    { position = { x = a#position#x - m, … },
+      size = { x = a#size#x + <span class="num">2.0</span> * m, … } }
+
+<span class="cm">// View.flix — 星はセル番号のハッシュで「決定的に」撒く</span>
+<span class="kw">def</span> <span class="fn">starAt</span>(col, row, …): Option[Render.PlacedItem] =
+    <span class="kw">let</span> idx = col * <span class="num">92821</span> + row * <span class="num">31</span> + salt;
+<span class="hl">    <span class="kw">if</span> (Hash01.<span class="fn">at</span>(idx, <span class="num">0</span>) &gt; <span class="num">0.5</span>) None            <span class="b b4">4</span></span>
+    <span class="kw">else</span> Some(セル内の位置・明るさもハッシュで決めた星)
+
+<span class="cm">// エンジン側の芯（どちらも純関数）:</span>
+<span class="cm">//   clampCenter: 視界(design/zoom)が bounds を出ない位置へ center を収める</span>
+<span class="cm">//   parallaxCenter: lerp(画面中央, center, factor) — 遠いほど動きが小さい</span></code></pre>
+    </div>
+    <figure>
+      <svg viewBox="0 0 440 260" role="img" aria-label="カメラ境界と視差レイヤの図">
+        <!-- bounds (dashed) -->
+        <rect x="40" y="30" width="360" height="200" rx="6" fill="none" stroke="#ffb454" stroke-width="2" stroke-dasharray="7 5"/>
+        <text x="220" y="22" fill="#ffb454" font-size="12" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">bounds = アリーナ + 余白 128px</text>
+        <!-- stars in margin -->
+        <g fill="#879ccc">
+          <rect x="55" y="45" width="2" height="2"/><rect x="95" y="210" width="3" height="3" fill="#d4e3ff"/>
+          <rect x="370" y="60" width="2" height="2"/><rect x="385" y="150" width="2" height="2" fill="#4d5880"/>
+          <rect x="60" y="150" width="2" height="2" fill="#4d5880"/><rect x="350" y="205" width="3" height="3" fill="#d4e3ff"/>
+          <rect x="180" y="42" width="2" height="2"/><rect x="300" y="215" width="2" height="2"/>
+        </g>
+        <!-- arena -->
+        <rect x="90" y="65" width="260" height="130" fill="#1c1c28" stroke="#639bff" stroke-width="2"/>
+        <g opacity="0.5">
+          <rect x="90" y="65" width="33" height="33" fill="#24242e"/><rect x="156" y="65" width="33" height="33" fill="#24242e"/><rect x="222" y="65" width="33" height="33" fill="#24242e"/><rect x="288" y="65" width="33" height="33" fill="#24242e"/>
+          <rect x="123" y="98" width="33" height="33" fill="#24242e"/><rect x="189" y="98" width="33" height="33" fill="#24242e"/><rect x="255" y="98" width="33" height="33" fill="#24242e"/><rect x="321" y="98" width="29" height="33" fill="#24242e"/>
+          <rect x="90" y="131" width="33" height="33" fill="#24242e"/><rect x="156" y="131" width="33" height="33" fill="#24242e"/><rect x="222" y="131" width="33" height="33" fill="#24242e"/><rect x="288" y="131" width="33" height="33" fill="#24242e"/>
+          <rect x="123" y="164" width="33" height="31" fill="#24242e"/><rect x="189" y="164" width="33" height="31" fill="#24242e"/><rect x="255" y="164" width="33" height="31" fill="#24242e"/>
+        </g>
+        <text x="220" y="135" fill="#9c9cb4" font-size="11" text-anchor="middle">アリーナ（床 + リング）</text>
+        <!-- camera view pinned at right edge of bounds -->
+        <rect x="270" y="80" width="130" height="98" fill="none" stroke="#7ecf9a" stroke-width="2.5"/>
+        <text x="335" y="192" fill="#7ecf9a" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">視界（bounds の縁で停止）</text>
+        <!-- player -->
+        <rect x="336" y="120" width="12" height="12" fill="#639bff"/>
+        <text x="220" y="250" fill="#9c9cb4" font-size="12" text-anchor="middle">端に立つと「リング → 星の余白 → 視界の縁」の順に見えて、そこでカメラが止まる</text>
+      </svg>
+      <figcaption>
+        <span class="b b1">1</span> bounds は「カメラ中心が動ける範囲」ではなく<strong>「映してよい範囲」</strong>。
+        視界の縁で判定するので、ズームで視界が広がると止まる位置は自動で内側に寄る。
+        矩形が視界より狭い軸は中央固定 — ズームアウトの全景が安定するのはこのルール。<br>
+        <span class="b b2">2</span> factor はカメラに対する速度比。0.25 の遠景はカメラの 1/4 しか動かない
+        =「遠くの物ほどゆっくり流れる」奥行きの錯覚。レイヤの <code>ctx#visible</code> も
+        見かけのカメラで計算されるので、culling のコードは主レイヤと同じに書ける。<br>
+        <span class="b b3">3</span> <strong>実際に踏んだ教訓</strong>: 最初 bounds をアリーナぴったりにしたら、
+        「端の外を映さない」が完璧に働いて<strong>星空が一生映らなかった</strong>。
+        境界は機能であると同時にレベルデザイン — 「何を見せるための余白か」まで決めて初めて完成する。<br>
+        <span class="b b4">4</span> 星は乱数ではなく<strong>セル番号のハッシュ</strong>（Hash01）。
+        どこへ動いても・何度戻っても同じ空が再現されるので、F8 の巻き戻しやリプレイと矛盾しない。
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ═══════════════ summary ═══════════════ -->
+<section>
+  <h2>まとめ — 仕掛けの分担</h2>
+  <p class="sec-intro">
+    <span class="b b1">1</span> box は入力で world を進む（World.step)
+    → <span class="b b2">2</span> cam が followDelta（lerp）で遅れて追う
+    → <span class="b b3">3</span> ボタンが zoomTarget を1段動かし、zoom が lerp で目標へ寄る
+    → <span class="b b4">4</span> エンジンが「(world − cam) × zoom + 中央」で全描画物をずらして伸縮する（HUD は素通し）。
+    0.1.8 の境界と視差も同じ流儀で、World は何も知らず <strong>Main の宣言だけが増える</strong>。
+    カメラという特別なオブジェクトは存在せず、<strong>World の中の座標2つと倍率1つ、宣言数行</strong>だけで
+    「追いかけ・止まり・寄り引きし・奥行きが出る」カメラ一式が動いています。
+    追従もズームも同じ lerp の手口なのがミソです。
+  </p>
+  <footer>
+    対象コード: <code>src/World.flix</code> / <code>src/View.flix</code> / <code>src/Controls.flix</code> /
+    <code>src/Hud.flix</code> / <code>src/Main.flix</code>。エンジン flix_game_engine 0.1.8 の
+    <code>App.withCamera</code> / <code>withZoom</code> / <code>withCameraBounds</code> /
+    <code>addParallaxLayer</code> / <code>withHudView</code>、<code>App.ViewCtx</code>（visible）、
+    Frame のマウス（cursor / mouseClicked）、
+    <code>CameraRig.followDelta / safeZoom / toWorldPosZoomed / clampCenter / parallaxCenter</code>、
+    <code>Hash01</code> を利用。
+  </footer>
+</section>
+
+</div>
+
+<script>
+(function () {
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  const readout = document.getElementById('readout');
+  const followCk = document.getElementById('follow');
+  const crossCk = document.getElementById('cross');
+  const resetBtn = document.getElementById('reset');
+
+  // ゲームと同じ定数
+  const W = 320, H = 240, SPEED = 120, FOLLOW = 5.0, TILE = 32, SIZE = 16;
+  const ZSTEP = 1.25, ZMIN = 0.2, ZMAX = 2.5, ZEASE = 8.0;   // World.flix の zoom 定数と同じ
+  const BTN_R = 11;                                           // Hud.radius()
+  const TILE_A = '#24242e', TILE_B = '#30303c', PLAYER = '#639bff', CAM = '#ffb454';
+  // 星空に浮かぶアリーナ（World.arena）と、カメラが映してよい範囲（+128px の星空余白）
+  const ARENA = { x: -352, y: -256, w: 1024, h: 768 };
+  const MARGIN = 128;
+  const BOUNDS = { x: ARENA.x - MARGIN, y: ARENA.y - MARGIN,
+                   w: ARENA.w + MARGIN * 2, h: ARENA.h + MARGIN * 2 };
+  const STAR_COLORS = ['#4d5880', '#879ccc', '#d4e3ff'];
+
+  const plusC  = { x: W - 18, y: 20 };   // Hud.plusCenter
+  const minusC = { x: W - 18, y: 48 };   // Hud.minusCenter
+
+  let st = { x: W / 2, y: H / 2, camx: W / 2, camy: H / 2, zoom: 1, zoomTarget: 1 };
+  let hover = { plus: false, minus: false };
+  const keys = new Set();
+  const KEYMAP = {
+    ArrowLeft: 'L', ArrowRight: 'R', ArrowUp: 'U', ArrowDown: 'D',
+    a: 'L', d: 'R', w: 'U', s: 'D', A: 'L', D: 'R', W: 'U', S: 'D'
+  };
+
+  cv.addEventListener('keydown', e => {
+    const k = KEYMAP[e.key];
+    if (k) { keys.add(k); e.preventDefault(); }
+  });
+  cv.addEventListener('keyup', e => {
+    const k = KEYMAP[e.key];
+    if (k) { keys.delete(k); e.preventDefault(); }
+  });
+  cv.addEventListener('blur', () => keys.clear());
+
+  // マウス位置を design 座標へ（エンジンの getMousePosition と同じ変換）
+  function toDesign(e) {
+    const rect = cv.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) / rect.width * W,
+             y: (e.clientY - rect.top) / rect.height * H };
+  }
+  function inCircle(c, p) { return Math.hypot(p.x - c.x, p.y - c.y) <= BTN_R; }
+  const clampZoom = z => Math.max(ZMIN, Math.min(z, ZMAX));
+
+  cv.addEventListener('mousemove', e => {
+    const p = toDesign(e);
+    hover = { plus: inCircle(plusC, p), minus: inCircle(minusC, p) };
+    cv.style.cursor = (hover.plus || hover.minus) ? 'pointer' : 'crosshair';
+  });
+  // Controls.zoomButtons と同じ: クリックのエッジでボタンに乗っていれば目標を1段動かす
+  cv.addEventListener('click', e => {
+    const p = toDesign(e);
+    if (inCircle(plusC, p))       st.zoomTarget = clampZoom(st.zoomTarget * ZSTEP);
+    else if (inCircle(minusC, p)) st.zoomTarget = clampZoom(st.zoomTarget / ZSTEP);
+    cv.focus();
+  });
+  resetBtn.addEventListener('click', () => {
+    st = { x: W / 2, y: H / 2, camx: W / 2, camy: H / 2, zoom: 1, zoomTarget: 1 };
+    cv.focus();
+  });
+
+  function axis(neg, pos) { return (keys.has(pos) ? 1 : 0) - (keys.has(neg) ? 1 : 0); }
+
+  // World.step と同じ計算（移動 + アリーナの壁 + カメラ追従 lerp + ズーム lerp）
+  const clampAxis = (lo, hi, v) => Math.max(lo, Math.min(v, hi));
+  function step(dt) {
+    const nx = clampAxis(ARENA.x + SIZE / 2, ARENA.x + ARENA.w - SIZE / 2,
+                         st.x + axis('L', 'R') * SPEED * dt);
+    const ny = clampAxis(ARENA.y + SIZE / 2, ARENA.y + ARENA.h - SIZE / 2,
+                         st.y + axis('U', 'D') * SPEED * dt);
+    const t = Math.min(1.0, FOLLOW * dt);
+    const fx = followCk.checked ? st.camx + (nx - st.camx) * t : st.camx;
+    const fy = followCk.checked ? st.camy + (ny - st.camy) * t : st.camy;
+    const zt = Math.min(1.0, ZEASE * dt);
+    const z = st.zoom + (st.zoomTarget - st.zoom) * zt;
+    st = { x: nx, y: ny, camx: fx, camy: fy, zoom: z, zoomTarget: st.zoomTarget };
+  }
+
+  // エンジン CameraRig.clampCenter と同じ: 視界が bounds を出ない位置へ center を収める
+  function clampCenterAxis(lo, size, seen, c) {
+    if (seen >= size) return lo + size / 2;
+    return clampAxis(lo + seen / 2, lo + size - seen / 2, c);
+  }
+
+  // Hash01 相当の決定的ハッシュ [0,1)。星の有無・位置・明るさの源
+  function h01(i, ch) {
+    let x = (Math.imul(i, 374761393) + Math.imul(ch, 668265263)) >>> 0;
+    x = Math.imul(x ^ (x >>> 13), 1274126177) >>> 0;
+    return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+  }
+
+  // 視差レイヤ: 見かけの camera = lerp(画面中央, cc, factor) で星を撒く
+  function drawStars(factor, cellSize, salt, cc, z) {
+    const lc = { x: W / 2 + (cc.x - W / 2) * factor, y: H / 2 + (cc.y - H / 2) * factor };
+    const sx = wx => (wx - lc.x) * z + W / 2, sy = wy => (wy - lc.y) * z + H / 2;
+    const seenW = W / z, seenH = H / z;
+    const c0 = Math.floor((lc.x - seenW / 2) / cellSize), r0 = Math.floor((lc.y - seenH / 2) / cellSize);
+    const cols = Math.floor(seenW / cellSize) + 2, rows = Math.floor(seenH / cellSize) + 2;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const col = c0 + c, row = r0 + r;
+        const idx = Math.imul(col, 92821) + row * 31 + salt;
+        if (h01(idx, 0) > 0.5) continue;
+        const px = (col + h01(idx, 1)) * cellSize, py = (row + h01(idx, 2)) * cellSize;
+        const b = h01(idx, 3);
+        const tier = b < 0.6 ? 0 : (b < 0.9 ? 1 : 2);
+        ctx.fillStyle = STAR_COLORS[tier];
+        const s = (tier + 1) * z;
+        ctx.fillRect(sx(px), sy(py), Math.max(s, 0.8), Math.max(s, 0.8));
+      }
+    }
+  }
+
+  // エンジン sceneItems と同じ合成: bounds クランプ → 視差 → アリーナ → リング → プレイヤー
+  function draw() {
+    const z = st.zoom;
+    const seenW = W / z, seenH = H / z;
+    // 描画に使う center はクランプ済み（World の cam はそのまま = エンジンと同じ分担）
+    const cc = { x: clampCenterAxis(BOUNDS.x, BOUNDS.w, seenW, st.camx),
+                 y: clampCenterAxis(BOUNDS.y, BOUNDS.h, seenH, st.camy) };
+    const sx = wx => (wx - cc.x) * z + W / 2;
+    const sy = wy => (wy - cc.y) * z + H / 2;
+    ctx.save();
+    ctx.scale(2, 2);
+    ctx.fillStyle = '#141420';
+    ctx.fillRect(0, 0, W, H);
+    // 星空（遠景 0.25・近景 0.55 — 実ゲームの addParallaxLayer と同じ factor）
+    drawStars(0.25, 48, 11, cc, z);
+    drawStars(0.55, 96, 47, cc, z);
+    // アリーナの床タイル: 見えている範囲 ∩ アリーナだけ
+    const c0 = Math.max(Math.floor((cc.x - seenW / 2) / TILE), ARENA.x / TILE);
+    const r0 = Math.max(Math.floor((cc.y - seenH / 2) / TILE), ARENA.y / TILE);
+    const c1 = Math.min(Math.floor((cc.x + seenW / 2) / TILE) + 1, (ARENA.x + ARENA.w) / TILE);
+    const r1 = Math.min(Math.floor((cc.y + seenH / 2) / TILE) + 1, (ARENA.y + ARENA.h) / TILE);
+    for (let row = r0; row < r1; row++) {
+      for (let col = c0; col < c1; col++) {
+        ctx.fillStyle = (((col + row) % 2) + 2) % 2 === 0 ? TILE_A : TILE_B;
+        ctx.fillRect(sx(col * TILE), sy(row * TILE), TILE * z + 0.5, TILE * z + 0.5);
+      }
+    }
+    // アリーナの縁取りリング
+    ctx.strokeStyle = PLAYER; ctx.lineWidth = Math.max(2 * z, 1);
+    ctx.strokeRect(sx(ARENA.x), sy(ARENA.y), ARENA.w * z, ARENA.h * z);
+    ctx.fillStyle = PLAYER;
+    ctx.fillRect(sx(st.x) - SIZE * z / 2, sy(st.y) - SIZE * z / 2, SIZE * z, SIZE * z);
+    if (crossCk.checked) {
+      ctx.strokeStyle = CAM; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(W / 2 - 7, H / 2); ctx.lineTo(W / 2 + 7, H / 2);
+      ctx.moveTo(W / 2, H / 2 - 7); ctx.lineTo(W / 2, H / 2 + 7);
+      ctx.stroke();
+    }
+    // HUD ボタン（カメラもズームも掛からない = View.hud と同じ画面固定）
+    drawButton(plusC, '+', hover.plus);
+    drawButton(minusC, '−', hover.minus);
+    ctx.restore();
+
+    readout.innerHTML =
+      'box <b class="cb">(' + st.x.toFixed(1) + ', ' + st.y.toFixed(1) + ')</b><br>' +
+      'cam <b class="ca">(' + cc.x.toFixed(1) + ', ' + cc.y.toFixed(1) + ')</b>' +
+      (cc.x !== st.camx || cc.y !== st.camy ? ' <b class="ca">⛔限界</b>' : '') + '<br>' +
+      'zoom <b>' + z.toFixed(2) + '</b> → 目標 <b>' + st.zoomTarget.toFixed(2) + '</b><br>' +
+      '画面上の box <b>(' + sx(st.x).toFixed(1) + ', ' + sy(st.y).toFixed(1) + ')</b>';
+  }
+
+  function drawButton(c, label, hov) {
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, BTN_R, 0, Math.PI * 2);
+    ctx.fillStyle = hov ? '#465578' : '#32374b';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = hov ? '#639bff' : '#7385a6';
+    ctx.stroke();
+    ctx.fillStyle = '#ebf0ff';
+    ctx.font = '600 13px ui-monospace, Menlo, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, c.x, c.y + 0.5);
+  }
+
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min((now - last) / 1000, 0.05);
+    last = now;
+    step(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+
+</body>
+</html>
