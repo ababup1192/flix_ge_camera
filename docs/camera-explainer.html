@@ -81,6 +81,7 @@
     font-family: var(--mono); font-size: 13px; line-height: 1.75;
     tab-size: 4;
   }
+  a { color: var(--blue); }
   code { font-family: var(--mono); font-size: 0.92em; background: var(--surface2); border-radius: 4px; padding: 1px 5px; }
   pre code { background: none; padding: 0; font-size: inherit; }
   .kw  { color: #b18cff; }
@@ -106,6 +107,7 @@
     margin: 0; background: var(--surface); border: 1px solid var(--border);
     border-radius: 8px; padding: 16px;
   }
+  figure.solo { margin: 0 0 24px; }
   figure svg { display: block; width: 100%; height: auto; }
   figcaption { font-size: 13px; color: var(--muted); margin-top: 12px; line-height: 1.8; }
   figcaption .b { width: 16px; height: 16px; font-size: 10px; }
@@ -137,6 +139,14 @@
   }
   .term dd { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.9; }
   .term dd b { color: var(--text); font-weight: 600; }
+
+  /* Flix 文法カード内の「TypeScript ならこう / Flix はこう」対比コード */
+  .term pre.cmp {
+    margin: 4px 0 8px; padding: 10px 12px; overflow-x: auto;
+    background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.75; color: var(--text);
+    tab-size: 4;
+  }
 
   /* ── demo ── */
   .demo {
@@ -195,6 +205,25 @@
 
   footer { margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--border);
            font-size: 13px; color: var(--muted); }
+
+  /* ── 目次 ── */
+  nav.toc { margin-top: 28px; font-size: 13.5px; }
+  nav.toc ol {
+    list-style: none; margin: 0; padding: 0;
+    display: flex; flex-wrap: wrap; gap: 8px 10px;
+  }
+  nav.toc a {
+    display: inline-block; color: var(--text); text-decoration: none;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 12px;
+  }
+  nav.toc a:hover { border-color: var(--blue); }
+  nav.toc .tag { color: var(--muted); font-size: 11.5px; margin-left: 6px; }
+
+  /* ── まとめの箇条書き ── */
+  ul.recap { list-style: none; margin: 0 0 18px; padding: 0; color: var(--muted); max-width: 44em; }
+  ul.recap li { margin: 8px 0; }
+  ul.recap b { color: var(--text); font-weight: 600; }
 </style>
 
 <div class="wrap">
@@ -203,21 +232,38 @@
   <p class="eyebrow">flix_ge_camera / flix_game_engine</p>
   <h1>なぜ box が動き、カメラが追いかけ、背景が流れるのか</h1>
   <p class="lede">
-    星空に浮かぶアリーナの上で box を動かすと、カメラが少し遅れて追いかけ、床と二層の星が
-    違う速さで流れ、端まで行くとカメラだけが止まる。＋/− ボタンで滑らかに寄り引きし、
-    引き切るとアリーナの全景になる。この全部を作っているのは
-    <strong>World.flix の追従・補間計算</strong> と <strong>Main.flix の宣言数行</strong> だけです
-    （エンジン 0.1.4 で座標変換 → 0.1.5 で可視範囲 → 0.1.6 でマウスとズーム →
-    0.1.7 で防波堤と逆変換 → 0.1.8 で境界と視差、と段階的にエンジン側へ移りました）。
-    実際のコードと図を1行ずつ対比しながら解説します。
+    星空に浮かぶアリーナの上で四角い箱（box。このページの主役）を動かすと、
+    カメラが少し遅れて追いかけ、床と二層の星が違う速さで流れ、端まで行くとカメラだけが止まる。
+    ＋/− ボタンで滑らかに寄り引きし、引き切るとアリーナの全景になる —
+    <a href="#demo">ページ内のデモ</a>で実際に触れます。
+    この全部を作っているのは、ゲーム側に書いた<strong>「箱を追いかける」小さな計算</strong>と
+    <strong>設定の数行</strong>だけ。残りの共通の仕事はエンジンが裏で引き受けています。
+    それがどう動いているのか、実際のコードと図を1行ずつ対比しながら解説します。
   </p>
+  <nav class="toc" aria-label="目次">
+    <ol>
+      <li><a href="#terms">基礎用語<span class="tag">ゲームを作ったことがあれば飛ばして OK</span></a></li>
+      <li><a href="#what-is-camera">そもそもカメラとは</a></li>
+      <li><a href="#demo">触ってみるデモ</a></li>
+      <li><a href="#flix">Flix の読み方</a></li>
+      <li><a href="#loop">全体の流れ</a></li>
+      <li><a href="#s1">その1 追従</a></li>
+      <li><a href="#s2">その2 座標変換</a></li>
+      <li><a href="#s3">その3 背景タイル</a></li>
+      <li><a href="#s4">その4 ズーム</a></li>
+      <li><a href="#s5">その5 境界と視差</a></li>
+      <li><a href="#summary">まとめ</a></li>
+    </ol>
+  </nav>
 </header>
 
 <!-- ═══════════════ 基礎用語 ═══════════════ -->
-<section>
+<section id="terms">
   <h2>まず基礎用語 — この5つが分かれば読める</h2>
   <p class="sec-intro">
     以降の解説で繰り返し出てくる言葉を先にまとめます。特に <b>dt</b> はすべての計算に登場します。
+    ゲームを作ったことがあれば既知のはずなので、<a href="#what-is-camera">次のセクション</a>へ
+    飛ばして構いません。
   </p>
   <div class="glossary">
     <dl class="term">
@@ -252,6 +298,7 @@
         <b>「world のどの点を画面の中央に映すか」を表す1つの座標</b>。
         このゲームではレンズも何もない、ただの <code>{ x, y }</code> です。
         cam が右へ動けば、切り取り窓が右へずれるので、映っている物は左へ流れて見えます。
+        なぜそう見えるのか・裏で何が起きているのかは、すぐ次のセクションで。
       </dd>
     </dl>
     <dl class="term">
@@ -267,69 +314,128 @@
       <dd>
         ゲームの論理的な画面サイズ（このプロジェクトでは <b>320×240</b>。project.json の
         designWidth/Height）。実際の窓が何ピクセルでも、ゲーム内の計算はこのサイズで行い、
-        エンジンが窓に合わせて拡大します。
+        エンジンが窓に合わせて拡大します。以降の「screen 座標」はこの design サイズ基準の
+        画面上の位置のことです（Unity の Pixel Perfect Camera の reference resolution に相当）。
       </dd>
     </dl>
   </div>
 </section>
 
-<!-- ═══════════════ Flix 文法 ═══════════════ -->
-<section>
-  <h2>Flix の読み方 — コード片に出てくる尖った文法</h2>
+<!-- ═══════════════ そもそもカメラとは ═══════════════ -->
+<section id="what-is-camera">
+  <h2>そもそもカメラとは何か — 裏で起きていること <span class="file">エンジン内部</span></h2>
   <p class="sec-intro">
-    このページのコードは <strong>Flix</strong>（JVM で動く関数型言語）です。一般的な言語と
-    見た目が違うところだけ先に押さえれば、あとは普通に読めます。8個だけです。
+    2D ゲームのカメラには、レンズも本体もありません。実体は
+    <strong>「world のどの点を画面中央に映すか」の座標1つ（cam）と、
+    「どこまで寄るか」の倍率1つ（zoom）</strong>だけ。
+    カメラと呼べる物は、この2つの値のほかに存在しません。
   </p>
-  <div class="glossary">
-    <dl class="term">
-      <dt><code>world#x</code> <span class="en">フィールド参照は #</span></dt>
-      <dd><code>.</code>（ドット）ではなく <code>#</code> でレコードの中身を取る。
-        <code>world#cam#x</code> のように連鎖もできる。</dd>
-    </dl>
-    <dl class="term">
-      <dt><code>{ x = nx | world }</code> <span class="en">レコード更新</span></dt>
-      <dd>「x だけ差し替えて、<b>残りは world のまま</b>」。<code>|</code> の右が土台。
-        値は不変なので「書き換える」のではなく毎回新しい World を作る —
-        <code>World.step</code> が毎フレームやっているのはこれ。</dd>
-    </dl>
-    <dl class="term">
-      <dt><code>type alias World = { … }</code> <span class="en">構造的レコード型</span></dt>
-      <dd>型は名前でなく<b>形</b>で決まる。World もただの別名（alias）で、同じ形のレコードなら
-        同じ型として通る。クラス定義は存在しない。</dd>
-    </dl>
-    <dl class="term">
-      <dt><code>f(center, design = d)</code> <span class="en">名前渡し引数</span></dt>
-      <dd>同じ型（Vec2 同士など）の引数が並ぶと取り違えるので、ラベルを必須にできる。
-        実体は「1ラベルのレコードで包む」糖衣構文。エンジンの camera API が多用している。</dd>
-    </dl>
-    <dl class="term">
-      <dt><code>|&gt;</code> <span class="en">パイプ演算子</span></dt>
-      <dd><code>x |&gt; f |&gt; g</code> は <code>g(f(x))</code>。Main の
-        <code>App.makeWith(…) |&gt; App.addSystem(…) |&gt; …</code> はこれでビルダーを繋いでいる。</dd>
-    </dl>
-    <dl class="term">
-      <dt><code>def speed(): Float64 = 120.0</code> <span class="en">定数も0引数関数</span></dt>
-      <dd>トップレベルに変数は置けないため、定数は引数なしの関数として書く。
-        呼ぶときも <code>speed()</code> と括弧が付く。</dd>
-    </dl>
-    <dl class="term">
-      <dt><code>\ IO</code>・<code>\ ef</code> <span class="en">効果システム（Flix の看板機能）</span></dt>
-      <dd>関数型の後ろの <code>\ …</code> は「外の世界に触れるか」の宣言で、
-        <b>何も書かなければ純粋</b>だとコンパイラが保証する。World.step や View.frame が
-        純粋なのは規約ではなく型。main だけが <code>run { … } with …</code> で
-        ハンドラを張り、窓・時計・描画の副作用を引き受ける。</dd>
-    </dl>
-    <dl class="term">
-      <dt><code>forM (…) yield</code> <span class="en">モナド内包</span></dt>
-      <dd>Scala の for 内包表記と同じ。List はモナドなので
-        <code>forM (r &lt;- rows; c &lt;- cols) yield tile(…)</code> が
-        二重ループのリスト生成になる（その3の背景タイルで使用）。</dd>
-    </dl>
+  <p class="sec-intro">
+    では cam が動くと、何が起きているのか。画面（枠）そのものは1ミリも動かせないので、
+    「カメラが動く」は実は錯覚です。本当に起きているのは
+    <strong>「描く物すべてを反対方向にずらす」</strong>こと —
+    停車中の電車で、隣の電車が動くと自分が動いた気がするのと同じで、
+    枠が固定でも世界側を逆にずらせば「視点が動いた」ように見えます。
+  </p>
+  <figure class="solo">
+    <svg viewBox="0 0 880 300" role="img"
+         aria-label="左: カメラという窓が世界の上を右へ動くイメージ。右: 実際は画面の枠が固定で、世界側が左へずれる図">
+      <defs>
+        <pattern id="wchk" width="80" height="80" patternUnits="userSpaceOnUse">
+          <rect width="80" height="80" fill="#12121c"/>
+          <rect width="40" height="40" fill="#24242e" opacity="0.6"/>
+          <rect x="40" y="40" width="40" height="40" fill="#24242e" opacity="0.6"/>
+        </pattern>
+        <pattern id="wchk2" width="80" height="80" patternUnits="userSpaceOnUse" patternTransform="translate(-28 0)">
+          <rect width="80" height="80" fill="#12121c"/>
+          <rect width="40" height="40" fill="#24242e" opacity="0.6"/>
+          <rect x="40" y="40" width="40" height="40" fill="#24242e" opacity="0.6"/>
+        </pattern>
+        <marker id="ahc" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="#ffb454"/>
+        </marker>
+        <marker id="ahg" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 z" fill="#7ecf9a"/>
+        </marker>
+      </defs>
+
+      <!-- 左: 頭の中のイメージ -->
+      <text x="200" y="20" fill="#9c9cb4" font-size="12" text-anchor="middle">頭の中のイメージ: カメラ（窓）が世界の上を動く</text>
+      <rect x="10" y="30" width="380" height="220" rx="6" fill="url(#wchk)" stroke="#2a2a3a"/>
+      <rect x="300" y="128" width="24" height="24" fill="#639bff"/>
+      <text x="312" y="172" fill="#639bff" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">box（world に固定）</text>
+      <rect x="60" y="85" width="150" height="110" fill="none" stroke="#ffb454" stroke-width="2.5" stroke-dasharray="7 5" rx="4"/>
+      <g stroke="#ffb454" stroke-width="2">
+        <line x1="127" y1="140" x2="143" y2="140"/><line x1="135" y1="132" x2="135" y2="148"/>
+      </g>
+      <text x="135" y="166" fill="#ffb454" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">cam</text>
+      <line x1="213" y1="140" x2="285" y2="140" stroke="#ffb454" stroke-width="2.5" marker-end="url(#ahc)"/>
+      <text x="245" y="124" fill="#ffb454" font-size="12" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">窓が右へ…のつもり</text>
+      <text x="200" y="274" fill="#9c9cb4" font-size="12" text-anchor="middle">「カメラが右へ動く」と感じている</text>
+
+      <!-- 中央: 実際は -->
+      <text x="440" y="128" fill="#9c9cb4" font-size="13" text-anchor="middle">でも枠は</text>
+      <text x="440" y="146" fill="#9c9cb4" font-size="13" text-anchor="middle">動かせない</text>
+      <line x1="405" y1="162" x2="475" y2="162" stroke="#7ecf9a" stroke-width="2" marker-end="url(#ahg)"/>
+
+      <!-- 右: 実際に起きていること -->
+      <text x="680" y="20" fill="#9c9cb4" font-size="12" text-anchor="middle">実際に起きていること: 枠は固定、世界が逆へずれる</text>
+      <rect x="490" y="30" width="380" height="220" rx="6" fill="url(#wchk2)" stroke="#2a2a3a"/>
+      <rect x="700" y="128" width="24" height="24" fill="none" stroke="#639bff" stroke-dasharray="4 3" opacity="0.55"/>
+      <rect x="620" y="128" width="24" height="24" fill="#639bff"/>
+      <line x1="696" y1="140" x2="652" y2="140" stroke="#7ecf9a" stroke-width="2.5" marker-end="url(#ahg)"/>
+      <text x="672" y="172" fill="#7ecf9a" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">world − cam</text>
+      <rect x="605" y="85" width="150" height="110" fill="none" stroke="#ffb454" stroke-width="2.5" rx="4"/>
+      <text x="680" y="77" fill="#ffb454" font-size="11" text-anchor="middle" font-family="ui-monospace,Menlo,monospace">画面（固定）</text>
+      <text x="680" y="274" fill="#9c9cb4" font-size="12" text-anchor="middle">全描画物の座標から cam を引く = 世界が左へずれる</text>
+    </svg>
+    <figcaption>
+      左のように「カメラという窓が world の上を滑る」と考えてよいが、実機の画面（枠）は動かせない。
+      そこでエンジンは右のように<strong>すべての描画物の座標から cam を引いて</strong>、
+      世界側を反対方向へずらす。どちらでも見える絵は完全に同じ —
+      これが「カメラが動く」の実体で、式にすると <code>screen = world − cam + 中央</code>
+      （ズームも入れた完全形は <code>(world − cam) × zoom + 中央</code>。中央 = 画面サイズ/2）。
+    </figcaption>
+  </figure>
+  <p class="sec-intro">
+    この「ずらし」を含めて、エンジンが毎フレーム絵を描く直前にやり直している仕事を
+    順に並べるとこうなります。
+  </p>
+  <div class="flow">
+    <div class="step">
+      <div class="t">① 材料を読む</div>
+      <div class="d">ゲームの状態から <b>中心 cam</b> と <b>倍率 zoom</b> を読み取る —
+        カメラの材料はこの2つだけ。どちらもただの値</div>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step">
+      <div class="t">② 行きすぎを直す</div>
+      <div class="d">「ここより外は映さない」という範囲が決めてあれば、
+        はみ出さない位置まで中心を内側へ丸める（仕組みは<a href="#s5">その5</a>）</div>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step">
+      <div class="t">③ 見える範囲を出す</div>
+      <div class="d">中心と倍率から「world のどの矩形が画面に入るか」を計算して、
+        絵を組む側へ渡す — 見える分だけ描けばよくなる（使い方は<a href="#s3">その3</a>）</div>
+    </div>
+    <div class="arrow" aria-hidden="true">→</div>
+    <div class="step">
+      <div class="t">④ 全部ずらす</div>
+      <div class="d">上の図の変換 <code>(world − cam) × zoom + 中央</code> を、描く物すべてに一括適用。
+        画面に貼り付く UI（HUD。＋/− ボタンのこと）には掛けない（式は<a href="#s2">その2</a>・<a href="#s4">その4</a>）</div>
+    </div>
+  </div>
+  <div class="note">
+    <strong>つまりカメラの正体は、毎フレームやり直される座標変換です。</strong>
+    保存・復元するような「カメラの状態」はエンジンのどこにもなく、①の材料から毎回導き直します。
+    ここではまだ名前も式も覚えなくて大丈夫 — この4つの仕事を実際のコードでどう書くかを、
+    この後の その1〜その5 で1つずつ見ていきます。
   </div>
 </section>
 
 <!-- ═══════════════ デモ ═══════════════ -->
-<section>
+<section id="demo">
   <h2>次に触ってみる — ブラウザ上の再現デモ</h2>
   <p class="sec-intro">
     ゲームと同じロジック（速度 120px/秒・追従率 5.0・32px タイル・カメラ境界・二層の星空）を
@@ -354,20 +460,183 @@
         </div>
         <button class="reset" id="reset">はじめの位置に戻す</button>
         <p class="hint">キャンバスをクリックしてから <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>（または <kbd>WASD</kbd>）で移動。
-        右上の <b>＋/−</b> で寄り引き。<b>端まで歩く</b>とリングの向こうに星の余白が見えてカメラが止まり
-        （⛔限界 が readout に出る）、<b>−を押し切る</b>とアリーナが星空に浮かぶ全景になる。
+        右上の <b>＋/−</b> で寄り引き。<b>端まで歩く</b>とリング（アリーナの縁の枠）の向こうに
+        星の余白が見えてカメラが止まり（⛔限界 が readout に出る）、
+        <b>−を押し切る</b>とアリーナが星空に浮かぶ全景になる。
         縁に沿って歩くと星が床よりゆっくり流れる＝視差。</p>
       </div>
     </div>
   </div>
 </section>
 
+<!-- ═══════════════ Flix 文法 ═══════════════ -->
+<section id="flix">
+  <h2>Flix の読み方 — コード片に出てくる特徴的な文法</h2>
+  <p class="sec-intro">
+    ここからコードを読んでいきます。このページのコードは <strong>Flix</strong>
+    （JVM で動く関数型言語）です。見慣れない文法も、
+    <strong>「TypeScript ならこう書くやつ」と対にすれば</strong>ほとんどそのまま読めます。
+    上段が TypeScript・下段が Flix の対比で押さえましょう。
+  </p>
+  <div class="glossary">
+    <dl class="term">
+      <dt><code>world#x</code> <span class="en">フィールド参照は #</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう</span>
+world.x;  world.cam.x;
+
+<span class="cm">// Flix はこう</span>
+world#x;  world#cam#x</pre>
+        読み方は同じ「world の中の x」。<code>.</code> の代わりに <code>#</code> なだけで、連鎖もできる。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>{ x = nx | world }</code> <span class="en">レコード更新</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（スプレッドで「残りはコピー」）</span>
+<span class="kw">const</span> next = { ...world, x: nx };
+
+<span class="cm">// Flix はこう（| の右が土台）</span>
+<span class="kw">let</span> next = { x = nx | world };</pre>
+        意味も同じ「x だけ差し替えて<b>残りは world のまま</b>」。値は不変なので、
+        <code>World.step</code> は毎フレームこれで新しい World を作る
+        （丸ごとコピーではなく、変わらない部分は共有される。毎フレーム作っても軽い）。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>type alias World = { … }</code> <span class="en">構造的レコード型</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（TS も形で型が決まる）</span>
+<span class="kw">type</span> World = { x: number; cam: Vec2 };
+
+<span class="cm">// Flix はこう</span>
+<span class="kw">type alias</span> World = { x = Float64, cam = Vec2.Vec2 }</pre>
+        「名前でなく<b>形</b>が同じなら同じ型」は TS と同じ感覚で読める。
+        違いは、クラス定義がそもそも存在しないこと。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>f(center, design = d)</code> <span class="en">名前渡し引数</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（named args が無いのでオブジェクトで代用）</span>
+centerOn(center, { zoom: z, design: d }, items);
+
+<span class="cm">// Flix はこう（ラベルが言語機能）</span>
+CameraRig.<span class="fn">centerOn</span>(center, zoom = z, design = d, items)</pre>
+        実体は「1ラベルのレコードで包む」糖衣 — TS の代用テクがそのまま言語公式になった形。
+        同じ型（Vec2 同士など）の引数が並んでも、位置でなくラベルで区別できる。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>|&gt;</code> <span class="en">パイプ演算子</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（メソッドチェーン。ただしクラスに</span>
+<span class="cm">// メソッドとして生やした関数しか繋げない）</span>
+App.makeWith(init).addSystem(step).launch();
+
+<span class="cm">// Flix はこう（ただの関数を何でも繋げる）</span>
+App.<span class="fn">makeWith</span>(init)
+    |&gt; App.<span class="fn">addSystem</span>(step)
+    |&gt; App.<span class="fn">launch</span></pre>
+        <code>x |&gt; f</code> は <code>f(x)</code>。読み味はメソッドチェーンと同じだが、
+        クラス定義に手を入れずに任意の関数を挟める（TS では TC39 提案止まりの機能）。
+        Main.flix のビルダー連結はこれ。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>def speed(): Float64 = 120.0</code> <span class="en">定数も0引数関数</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（モジュール直下に変数を置ける）</span>
+<span class="kw">const</span> SPEED = <span class="num">120</span>;
+world.x + SPEED * dt;
+
+<span class="cm">// Flix はこう（トップレベル変数が無い → 引数なしの関数）</span>
+<span class="kw">pub def</span> <span class="fn">speed</span>(): Float64 = <span class="num">120.0</span>
+world#x + <span class="fn">speed</span>() * dt</pre>
+        呼ぶ側にも <code>()</code> が付くのが目印。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>\ IO</code> <span class="en">効果システム（Flix の看板機能）</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ではこの保証が書けない — 型は「純粋」を約束しない</span>
+<span class="kw">function</span> <span class="fn">step</span>(w: World): World {
+  fetch(<span class="num">"https://…"</span>);   <span class="cm">// 型には何の痕跡も残らない</span>
+  <span class="kw">return</span> { ...w, x: w.x + <span class="num">1</span> };
+}
+
+<span class="cm">// Flix — 何も書かなければ純粋だとコンパイラが保証</span>
+<span class="kw">pub def</span> <span class="fn">step</span>(input: Input, dt: Float64, world: World): World = …
+<span class="kw">def</span> <span class="fn">main</span>(): Unit \ IO = …  <span class="cm">// 外に触れるなら \ IO と書くしかない</span></pre>
+        一番 TS に無いもの。「async が signature に現れる」感覚の一般化で、World.step や
+        View.frame が純粋なのは規約ではなく<b>型</b>。main だけが <code>run { … } with …</code> で
+        窓・時計・描画の副作用を引き受ける（<code>with</code> は「IO を実際に誰がやるか」の
+        実装を差し込む構文。DI コンテナに近い）。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>forM (…) yield</code> <span class="en">for 内包（いわゆるモナド内包）</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（flatMap + map の入れ子）</span>
+rows.flatMap(r =&gt; cols.map(c =&gt; tile(c, r)));
+
+<span class="cm">// Flix はこう（Scala の for 内包表記と同じ）</span>
+<span class="kw">forM</span> (r &lt;- rows; c &lt;- cols) <span class="kw">yield</span> tile(c, r)</pre>
+        二重ループのリスト生成。flatMap を持つ型なら何にでも使える糖衣
+        （この仕組みの名前が「モナド」）。その3の背景タイルで登場する。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>x :: xs</code>・<code>xs ::: ys</code>・<code>Nil</code> <span class="en">リストの組み立て</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（スプレッドで連結）</span>
+<span class="kw">const</span> items = [...background(v), player(w)];
+
+<span class="cm">// Flix はこう（:: は先頭に1つ足す・::: は連結・Nil は []）</span>
+<span class="fn">background</span>(v) ::: <span class="fn">player</span>(w) :: Nil</pre>
+        List は配列ではなく連結リストで、先頭に足すのが基本操作。
+        その2の View.frame がこの形で「絵の列」を組む。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>Option</code>・<code>Some</code>・<code>None</code> <span class="en">「無いかもしれない」値</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう（null で「無い」を表す）</span>
+<span class="kw">function</span> <span class="fn">starAt</span>(…): Star | <span class="kw">null</span> { … }
+
+<span class="cm">// Flix はこう（null は無い。Option 型で包む）</span>
+<span class="kw">def</span> <span class="fn">starAt</span>(…): Option[Star] = <span class="kw">if</span> (…) None <span class="kw">else</span> Some(star)</pre>
+        <code>T | null</code> 相当。「無い」も普通の値なので、チェック漏れがコンパイルで落ちる。
+        その5の星撒きで登場する。
+      </dd>
+    </dl>
+    <dl class="term">
+      <dt><code>w -&gt; w#zoom</code> <span class="en">ラムダ（無名関数）</span></dt>
+      <dd>
+        <pre class="cmp"><span class="cm">// TypeScript ならこう</span>
+(w) =&gt; w.zoom;
+
+<span class="cm">// Flix はこう（=&gt; でなく -&gt;。_ は「引数を使わない」）</span>
+w -&gt; w#zoom
+_ -&gt; World.<span class="fn">cameraBounds</span>()</pre>
+        矢印が1本違うだけ。Main.flix が <code>withZoom</code> や
+        <code>withCameraBounds</code> に渡している小さな関数がこれ。
+      </dd>
+    </dl>
+  </div>
+</section>
+
 <!-- ═══════════════ 全体の流れ ═══════════════ -->
-<section>
+<section id="loop">
   <h2>全体の流れ — 毎フレームこの順で関数が呼ばれる</h2>
   <p class="sec-intro">
-    Main.flix はこのパイプラインを宣言しているだけです。状態は <code>World</code> という
-    ただのレコードで、毎フレーム「入力で次の World を作る → World を絵に写す」を繰り返します。
+    Main.flix は <code>App.addSystem(Controls.step)</code>・<code>App.withView(View.frame)</code> と
+    「何を呼んでほしいか」を宣言しているだけで、渡した関数はエンジンが毎フレームこの順で呼びます
+    （Controls.step の中で <code>inputOf</code> → <code>World.step</code> と繋がる）。
+    状態は <code>World</code> というただのレコードで、毎フレーム
+    「入力で次の World を作る → World を絵に写す」の繰り返し。
+    <a href="#what-is-camera">「そもそもカメラとは」</a>で見た4つの仕事は、
+    最後の「絵に写す」の内部で起きていることです。
   </p>
   <div class="flow">
     <div class="step">
@@ -379,7 +648,7 @@
     <div class="step">
       <div class="t">入力を軸値へ</div>
       <div class="f">Controls.inputOf</div>
-      <div class="d">← → を x = −1/0/+1、↑ ↓ を y = −1/0/+1 に畳む（変更なし）</div>
+      <div class="d">← → を x = −1/0/+1、↑ ↓ を y = −1/0/+1 に畳む</div>
     </div>
     <div class="arrow" aria-hidden="true">→</div>
     <div class="step">
@@ -397,7 +666,7 @@
 </section>
 
 <!-- ═══════════════ World.step ═══════════════ -->
-<section>
+<section id="s1">
   <h2>その1: box は入力どおり、カメラは lerp で遅れて追う <span class="file">src/World.flix</span></h2>
   <p class="sec-intro">
     World には box の位置 <code>x, y</code> と、カメラの中心 <code>cam</code> が入っています。
@@ -413,6 +682,7 @@
 <span class="kw">pub def</span> <span class="fn">step</span>(input, dt, world): World =
     <span class="hl"><span class="kw">let</span> nx = world#x + input#x * <span class="fn">speed</span>() * dt;   <span class="b b1">1</span></span>
     <span class="kw">let</span> ny = world#y + input#y * <span class="fn">speed</span>() * dt;
+    <span class="kw">let</span> cam = world#cam;
     { x = nx, y = ny,
     <span class="hl">  cam = { x = cam#x + CameraRig.<span class="fn">followDelta</span>(  <span class="b b3">3</span></span>
                     <span class="fn">follow</span>(), dt, nx, cam#x),
@@ -458,27 +728,29 @@
       </svg>
       <figcaption>
         <span class="b b1">1</span> box は入力そのまま <code>速度 120px/秒 × dt</code> だけ進む。<br>
-        <span class="b b2">2</span> 追従仕様はエンジン(0.1.4)の <code>CameraRig.Follow</code> で宣言する。
-        <code>k × dt</code> ≒ 1フレームで詰める割合（60fps なら約 8%）。内部の <code>min(1, k×dt)</code> は
+        <span class="b b2">2</span> 追従仕様はエンジンの <code>CameraRig</code>（カメラ計算の道具箱モジュール）に
+        <code>Follow</code> として宣言する。<code>k × dt</code> ≒ 1フレームで詰める割合（60fps なら約 8%。
+        Godot の Camera2D position_smoothing_speed と同じ役どころ）。内部の <code>min(1, k×dt)</code> は
         処理落ちで dt が大きくなっても行き過ぎない安全弁。<br>
         <span class="b b3">3</span> <code>followDelta</code> は「残りの距離 × min(1, k×dt)」の移動量を返す —
-        deadzone = 0 なら <code>cam + (box − cam) × t</code> の lerp（線形補間）そのもの。
+        deadzone = 0 なら <code>cam + (box − cam) × t</code> の lerp そのもの。
         <strong>残り距離に比例して詰める</strong>ので、離れるほど速く・近づくほどゆっくり追いつく。
         キーを離すと box が止まり、cam だけが寄っていくので box は画面中央へ戻る。
-        <code>deadzone</code> を広げると「帯の中では据え置き」の Godot 風の遊びも作れる。
+        <code>deadzone</code> を広げると「帯の中ではカメラを動かさない」遊びも作れる
+        （Godot の drag margin 相当）。
       </figcaption>
     </figure>
   </div>
 </section>
 
 <!-- ═══════════════ view transform ═══════════════ -->
-<section>
+<section id="s2">
   <h2>その2: 「カメラが動く」の正体は座標の引き算 <span class="file">src/Main.flix + エンジン</span></h2>
   <p class="sec-intro">
-    エンジン 0.1.4 から <code>App.withCamera</code> ができました。ゲームは
+    エンジンの <code>App.withCamera</code> を使うと、ゲームは
     <strong>「world のどこを画面中央に映したいか」を1行で宣言するだけ</strong>で、
     すべての描画物の置き場所から cam を引いて画面中央へずらす仕事はエンジンが引き受けます。
-    View は world 座標のまま絵を組むだけになりました。
+    View は world 座標のまま絵を組むだけです。
   </p>
   <div class="pair">
     <div class="codebox">
@@ -491,7 +763,7 @@ App.makeWith(World.initial)
     |&gt; App.launch
 
 <span class="cm">// View.flix — 変換コードは無い。world 座標で組むだけ。</span>
-<span class="cm">// ctx（0.1.5 の ViewCtx）から「見えている範囲」も貰える</span>
+<span class="cm">// ctx（App.ViewCtx）から「見えている範囲」も貰える</span>
 <span class="kw">pub def</span> <span class="fn">cameraCenter</span>(world): Vec2.Vec2 = world#cam
 
 <span class="hl"><span class="kw">pub def</span> <span class="fn">frame</span>(ctx: App.ViewCtx, world): List[Render.PlacedItem] = <span class="b b1">2</span></span>
@@ -546,10 +818,11 @@ App.makeWith(World.initial)
       </svg>
       <figcaption>
         <span class="b b2">1</span> <code>withCamera</code> に渡すのは「World → 画面中央に映したい world 座標」の純粋関数。
-        カメラという特別なオブジェクトは無く、World の <code>cam</code> を返すだけ。<br>
+        World の <code>cam</code> を返すだけ。<br>
         <span class="b b1">2</span> View は背景もプレイヤーも <strong>world 座標のまま1本のリストで返すだけ</strong>。
         エンジンが毎フレーム、全描画物に同じずらしを一括適用する（HUD 用の
-        <code>withHudView</code> に繋いだ絵だけはずらされない）。<br>
+        <code>withHudView</code> に繋いだ絵だけはずらされない。Godot の CanvasLayer、
+        Unity の Screen Space Canvas 相当）。<br>
         <span class="b b3">3</span> エンジンの中身は今も <code>screen = world − cam + 画面サイズ/2</code> の引き算1つ。
         cam が右へ 10 動くと、すべての screen 座標が左へ 10 ずれる — これが「背景が逆方向に流れる」理由。
       </figcaption>
@@ -558,7 +831,7 @@ App.makeWith(World.initial)
 </section>
 
 <!-- ═══════════════ background tiles ═══════════════ -->
-<section>
+<section id="s3">
   <h2>その3: 背景は「見える範囲のタイル」だけを毎フレーム計算する <span class="file">src/View.flix</span></h2>
   <p class="sec-intro">
     市松模様はどこかに保存されていません。<strong>カメラ位置から「いま画面に映るタイル番号」を
@@ -567,10 +840,10 @@ App.makeWith(World.initial)
   <div class="pair">
     <div class="codebox">
       <div class="bar"><span>View.background — 可視範囲のタイルを列挙</span><span>flix</span></div>
-      <pre><code><span class="cm">// 0.1.5: 「見えている矩形」は frame が ctx#visible として受け取り、</span>
-<span class="cm">// そのまま渡ってくる。cam も design もこの関数はもう知らない</span>
+      <pre><code><span class="cm">// 「見えている矩形」は frame が ctx#visible として受け取り、</span>
+<span class="cm">// そのまま渡ってくる。cam も design もこの関数は知らない</span>
 <span class="kw">def</span> <span class="fn">background</span>(visible: Rect2.Rect2): List[Render.PlacedItem] =
-    <span class="kw">let</span> ts = <span class="fn">tileSize</span>();  <span class="cm">// 32px</span>
+    <span class="kw">let</span> ts = <span class="fn">tileSize</span>();  <span class="cm">// 32px。tileIndex ≒ floor（切り下げて整数のタイル番号に）</span>
     <span class="hl"><span class="kw">let</span> col0 = <span class="fn">tileIndex</span>(visible#position#x / ts);          <span class="b b3">1</span></span>
     <span class="kw">let</span> row0 = <span class="fn">tileIndex</span>(visible#position#y / ts);
     <span class="hl"><span class="kw">let</span> cols = <span class="fn">tileIndex</span>(visible#size#x / ts) + <span class="num">2</span>;      <span class="b b2">2</span></span>
@@ -636,19 +909,19 @@ App.makeWith(World.initial)
 </section>
 
 <!-- ═══════════════ zoom ═══════════════ -->
-<section>
+<section id="s4">
   <h2>その4: ズームは「目標値・現在値の2段構え」+ 引き算に×zoomを1つ足すだけ <span class="file">src/World.flix ほか</span></h2>
   <p class="sec-intro">
-    右上の <strong>＋/− ボタン</strong>をクリックすると寄り引きできます（エンジン 0.1.6 で
-    Frame にマウスが、カメラ合成に zoom が入りました）。仕掛けは3層: ボタンは<strong>目標値を
-    1段動かすだけ</strong>、現在値は毎フレーム目標へ lerp（カメラ追従と同じ手口）、
-    エンジンは引き算の式に <strong>× zoom を1つ</strong>足して大きさも一緒に伸縮します。
+    右上の <strong>＋/− ボタン</strong>をクリックすると寄り引きできます。仕掛けはこう:
+    ボタンは<strong>目標値を1段動かすだけ</strong>、現在値は毎フレーム目標へ lerp
+    （カメラ追従と同じ手口）、エンジンは引き算の式に <strong>× zoom を1つ</strong>足して
+    大きさも一緒に伸縮します。
   </p>
   <div class="pair">
     <div class="codebox">
-      <div class="bar"><span>クリック → 目標 → 補間 → 合成 の4段</span><span>flix</span></div>
-      <pre><code><span class="cm">// Controls.flix — クリック判定。0.1.6 の Frame には</span>
-<span class="cm">// cursor（design 座標）と mouseClicked（エッジ）が焼かれている</span>
+      <div class="bar"><span>クリック → 目標 → 補間 → 合成</span><span>flix</span></div>
+      <pre><code><span class="cm">// Controls.flix — クリック判定。エンジンの Frame には</span>
+<span class="cm">// cursor（screen 座標）と mouseClicked（押した瞬間だけ true）が焼かれている</span>
 <span class="kw">pub def</span> <span class="fn">zoomButtons</span>(frame, world) =
     <span class="hl"><span class="kw">let</span> overPlus = Hud.<span class="fn">inCircle</span>(                    <span class="b b1">1</span></span>
         Hud.<span class="fn">plusCenter</span>(frame#viewport), frame#cursor);
@@ -668,7 +941,7 @@ App.makeWith(World.initial)
 |&gt; App.<span class="fn">withZoom</span>(w -&gt; w#zoom)
 |&gt; App.<span class="fn">withHudView</span>(View.hud)   <span class="cm">// +/− ボタンの絵（画面固定）</span>
 
-<span class="cm">// エンジン側（composeSceneZoomed）。その2の式に ×zoom が入るだけ:</span>
+<span class="cm">// エンジン側（composeScene）。その2の式に ×zoom が入るだけ:</span>
 <span class="cm">//   screen = (world − cam) × zoom + 画面サイズ/2   </span><span class="b b4">4</span>
 <span class="cm">//   大きさも × zoom、見えている範囲は design / zoom</span></code></pre>
     </div>
@@ -713,8 +986,8 @@ App.makeWith(World.initial)
       <figcaption>
         <span class="b b1">1</span> 当たり判定は「カーソルと円の中心の距離 ≤ 半径」だけ。ボタンは画面に
         貼り付いているので、<code>frame#cursor</code>（screen 座標）をそのまま比べられる。<br>
-        <span class="b b2">2</span> <code>mouseClicked</code> はキーの justPressed と同じ<strong>エッジ</strong>
-        （押した瞬間だけ true）。押しっぱなしで連打にならない。<br>
+        <span class="b b2">2</span> <code>mouseClicked</code> は<strong>押した瞬間だけ true</strong>。
+        押しっぱなしでは false のままなので、連打にならない。<br>
         <span class="b b3">3</span> ボタンが変えるのは <code>zoomTarget</code> だけで、実際の
         <code>zoom</code> は毎フレーム目標へ lerp — カメラ追従とまったく同じ手口なので、
         カチッと切り替わらず<strong>ぬるっと寄る</strong>。<br>
@@ -726,25 +999,27 @@ App.makeWith(World.initial)
   </div>
 
   <div class="note">
-    <strong>0.1.7 の仕上げ（レビューで塞いだ端）:</strong>
-    ① zoom には防波堤 <code>CameraRig.safeZoom</code> が入り、0 以下・NaN・Infinity のような
+    <strong>エンジン側の安全装置:</strong>
+    ① zoom には防波堤 <code>CameraRig.safeZoom</code> があり、0 以下・NaN・Infinity のような
     不正な倍率は安全な範囲（0.01〜1000）へ丸められる — <code>1.0 / 距離</code> のような
     うっかりゼロ除算でも画面が壊れない（ゲーム側の事前検査は不要）。
-    ② 逆変換 <code>toWorldPosZoomed</code>（screen → world = <code>(screen − 中央) ÷ zoom + cam</code>）が
-    追加され、次の定番「<strong>ズーム中に world の物をクリックする</strong>」が正しく書ける。
-    順変換で screen へ移した点を逆変換に通すと元の world 座標へ戻る（往復不変条件）ことは
-    エンジンのテストが固定している。
+    ② 逆変換 <code>toWorldPos</code>（screen → world = <code>(screen − 中央) ÷ zoom + cam</code>）もあり、
+    定番の「<strong>ズーム中に world の物をクリックする</strong>」が正しく書ける。
+    順変換で screen へ移した点を逆変換に通すと元の world 座標へ戻ることは
+    エンジンのテストが保証している。
   </div>
 </section>
 
 <!-- ═══════════════ bounds + parallax ═══════════════ -->
-<section>
-  <h2>その5: 端で止まるカメラと星空の視差 — ショーケースの完成 <span class="file">0.1.8</span></h2>
+<section id="s5">
+  <h2>その5: 端で止まるカメラと星空の視差 — ショーケースの完成 <span class="file">src/Main.flix ほか</span></h2>
   <p class="sec-intro">
-    エンジン 0.1.8 で入った最後の2機能。<strong>境界（withCameraBounds）</strong>は
-    「映してよい world の矩形」の宣言で、視界の縁がそこを出ないようカメラが止まる。
+    仕上げの2機能です。<strong>境界（withCameraBounds）</strong>は
+    「映してよい world の矩形」の宣言で、視界の縁がそこを出ないようカメラが止まる
+    （Godot の Camera2D limits、Unity の Cinemachine Confiner 相当）。
     <strong>視差（addParallaxLayer）</strong>はカメラの動きに factor を掛けた速さで流れる
-    背景レイヤ。ゲーム側の追加はどちらも <strong>Main の宣言だけ</strong>です。
+    背景レイヤ（Godot の ParallaxLayer motion_scale 相当）。
+    ゲーム側の追加はどちらも <strong>Main の宣言だけ</strong>です。
   </p>
   <div class="pair">
     <div class="codebox">
@@ -805,37 +1080,43 @@ App.makeWith(World.initial)
         矩形が視界より狭い軸は中央固定 — ズームアウトの全景が安定するのはこのルール。<br>
         <span class="b b2">2</span> factor はカメラに対する速度比。0.25 の遠景はカメラの 1/4 しか動かない
         =「遠くの物ほどゆっくり流れる」奥行きの錯覚。レイヤの <code>ctx#visible</code> も
-        見かけのカメラで計算されるので、culling のコードは主レイヤと同じに書ける。<br>
+        見かけのカメラで計算されるので、画面外を描かない間引き（culling）は
+        その3のタイル敷き詰めと同じに書ける。<br>
         <span class="b b3">3</span> <strong>実際に踏んだ教訓</strong>: 最初 bounds をアリーナぴったりにしたら、
         「端の外を映さない」が完璧に働いて<strong>星空が一生映らなかった</strong>。
         境界は機能であると同時にレベルデザイン — 「何を見せるための余白か」まで決めて初めて完成する。<br>
         <span class="b b4">4</span> 星は乱数ではなく<strong>セル番号のハッシュ</strong>（Hash01）。
-        どこへ動いても・何度戻っても同じ空が再現されるので、F8 の巻き戻しやリプレイと矛盾しない。
+        どこへ動いても・何度戻っても同じ空が再現されるので、リプレイや
+        エンジンの時間巻き戻しデバッグ機能（F8 キー）とも矛盾しない。
       </figcaption>
     </figure>
   </div>
 </section>
 
 <!-- ═══════════════ summary ═══════════════ -->
-<section>
+<section id="summary">
   <h2>まとめ — 仕掛けの分担</h2>
+  <p class="sec-intro">毎フレームの分担はこの4つ:</p>
+  <ul class="recap">
+    <li><span class="b b1">1</span> box は入力で world を進む（World.step）</li>
+    <li><span class="b b2">2</span> cam が followDelta（lerp）で遅れて追う</li>
+    <li><span class="b b3">3</span> ボタンが zoomTarget を1段動かし、zoom が lerp で目標へ寄る</li>
+    <li><span class="b b4">4</span> エンジンが <code>(world − cam) × zoom + 中央</code> で
+      全描画物をずらして伸縮する（HUD は素通し）</li>
+  </ul>
   <p class="sec-intro">
-    <span class="b b1">1</span> box は入力で world を進む（World.step)
-    → <span class="b b2">2</span> cam が followDelta（lerp）で遅れて追う
-    → <span class="b b3">3</span> ボタンが zoomTarget を1段動かし、zoom が lerp で目標へ寄る
-    → <span class="b b4">4</span> エンジンが「(world − cam) × zoom + 中央」で全描画物をずらして伸縮する（HUD は素通し）。
-    0.1.8 の境界と視差も同じ流儀で、World は何も知らず <strong>Main の宣言だけが増える</strong>。
+    境界と視差も同じ流儀で、World は何も知らず <strong>Main の宣言だけが増える</strong>。
     カメラという特別なオブジェクトは存在せず、<strong>World の中の座標2つと倍率1つ、宣言数行</strong>だけで
     「追いかけ・止まり・寄り引きし・奥行きが出る」カメラ一式が動いています。
     追従もズームも同じ lerp の手口なのがミソです。
   </p>
   <footer>
     対象コード: <code>src/World.flix</code> / <code>src/View.flix</code> / <code>src/Controls.flix</code> /
-    <code>src/Hud.flix</code> / <code>src/Main.flix</code>。エンジン flix_game_engine 0.1.8 の
+    <code>src/Hud.flix</code> / <code>src/Main.flix</code>。エンジン flix_game_engine の
     <code>App.withCamera</code> / <code>withZoom</code> / <code>withCameraBounds</code> /
     <code>addParallaxLayer</code> / <code>withHudView</code>、<code>App.ViewCtx</code>（visible）、
     Frame のマウス（cursor / mouseClicked）、
-    <code>CameraRig.followDelta / safeZoom / toWorldPosZoomed / clampCenter / parallaxCenter</code>、
+    <code>CameraRig.followDelta / safeZoom / toWorldPos / clampCenter / parallaxCenter</code>、
     <code>Hash01</code> を利用。
   </footer>
 </section>
