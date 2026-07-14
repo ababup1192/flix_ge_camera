@@ -40,9 +40,9 @@ mod Gallery {
         let center = CameraRig.clampCenter(bounds = World.cameraBounds(), seen = seen, world#cam);
         let far  = layerItems(atlas, world, 0.25, View.farStars,  center, z, d);
         let near = layerItems(atlas, world, 0.55, View.nearStars, center, z, d);
-        let ctx = { atlas = atlas, visible = App.visibleOfZoomed(Some(center), z, d) };
-        let hudCtx = { atlas = atlas, visible = App.visibleOf(None, d) };
-        let main = App.composeSceneZoomed(Some(center), z, d,
+        let ctx = { atlas = atlas, visible = App.visibleOf(Some(center), z, d) };
+        let hudCtx = { atlas = atlas, visible = App.visibleOf(None, 1.0, d) };
+        let main = App.composeScene(Some(center), z, d,
             { world = View.frame(ctx, world), hud = View.hud(hudCtx, world) });
         Render.draw(List.append(far, List.append(near, main)))
 
@@ -51,8 +51,8 @@ mod Gallery {
                    lview: (App.ViewCtx, World.World) -> List[Render.PlacedItem],
                    center: Vec2.Vec2, z: Float64, d: Vec2.Vec2): List[Render.PlacedItem] =
         let lc = CameraRig.parallaxCenter(factor, center, design = d);
-        let lctx = { atlas = atlas, visible = App.visibleOfZoomed(Some(lc), z, d) };
-        App.composeSceneZoomed(Some(lc), z, d, { world = lview(lctx, world), hud = Nil })
+        let lctx = { atlas = atlas, visible = App.visibleOf(Some(lc), z, d) };
+        App.composeScene(Some(lc), z, d, { world = lview(lctx, world), hud = Nil })
 
     // ── 台本（純粋な World.step を畳んで World の列を作る）──
 
