@@ -74,9 +74,11 @@ mod View {
     def tileIndex(q: Float64): Int32 =
         Float64.floor(q) |> Float64.tryToInt32 |> Option.getWithDefault(0)
 
-    // ── 視差レイヤ: 星空（Hash01 による決定的な無限星原）──
+    // ── 視差レイヤ: 星空 ──
     // App.addParallaxLayer がカメラの動きに factor を掛けた速さで流すので、
     // ここは world 座標で「見えている範囲のセルに星を撒く」だけ。
+    // 星の絵の決定（密度・段数・色・形）はぜんぶこの place にある —
+    // エンジンの Scatter は撒く仕組みだけ。
 
     def zFar(): Int32 = -20
     def zNear(): Int32 = -10
@@ -88,39 +90,28 @@ mod View {
 
     /// 遠景の星（カメラの 1/4 の速さでゆっくり流れる）。Main が factor 0.25 で繋ぐ。
     pub def farStars(ctx: App.ViewCtx, _world: World.World): List[Render.PlacedItem] =
-        starField(ctx#visible, cell = 48.0, salt = 11, z = zFar())
+        Scatter.field(ctx#visible, { cell = 48.0, salt = 11 },
+            (cell, rand) -> starPlace(48.0, zFar(), cell, rand))
 
     /// 近景の星（半分の速さ・まばらで大きめ）。Main が factor 0.55 で繋ぐ。
     pub def nearStars(ctx: App.ViewCtx, _world: World.World): List[Render.PlacedItem] =
-        starField(ctx#visible, cell = 96.0, salt = 47, z = zNear())
+        Scatter.field(ctx#visible, { cell = 96.0, salt = 47 },
+            (cell, rand) -> starPlace(96.0, zNear(), cell, rand))
 
-    /// 見えている範囲を覆うセル格子に星を撒く。星の有無・位置・明るさが全部
-    /// セル番号のハッシュ（Hash01）から決まるので、どこへ動いても同じ空が再現される。
-    def starField(visible: Rect2.Rect2, cell: {cell = Float64}, salt: {salt = Int32},
-                  z: {z = Int32}): List[Render.PlacedItem] =
-        let cs = cell#cell;
-        let c0 = tileIndex(visible#position#x / cs);
-        let r0 = tileIndex(visible#position#y / cs);
-        let cols = tileIndex(visible#size#x / cs) + 2;
-        let rows = tileIndex(visible#size#y / cs) + 2;
-        (forM (r <- List.range(0, rows); c <- List.range(0, cols))
-            yield starAt(c0 + c, r0 + r, cs, salt#salt, z#z))
-        |> List.filterMap(s -> s)
-
-    /// セル1個ぶんの星（無いセルもある）。セル内のどこに置くか・明るさもハッシュで決める。
-    def starAt(col: Int32, row: Int32, cs: Float64, salt: Int32, z: Int32): Option[Render.PlacedItem] =
-        let idx = col * 92821 + row * 31 + salt;
-        if (Hash01.at(idx, 0) > 0.5) None
+    /// セル1個ぶんの星（半分のセルは空）。セル内のどこに置くか・明るさ3段も蛇口から引く。
+    def starPlace(cell: Float64, z: Int32,
+                  at: {col = Int32, row = Int32}, rand: Int32 -> Float64): List[Render.PlacedItem] =
+        if (rand(0) > 0.5) Nil
         else {
-            let px = (Int32.toFloat64(col) + Hash01.at(idx, 1)) * cs;
-            let py = (Int32.toFloat64(row) + Hash01.at(idx, 2)) * cs;
-            let b = Hash01.at(idx, 3);
+            let px = (Int32.toFloat64(at#col) + rand(1)) * cell;
+            let py = (Int32.toFloat64(at#row) + rand(2)) * cell;
+            let b = rand(3);
             let (color, size) =
                 if (b < 0.6) (starDim(), 1.0)
                 else if (b < 0.9) (starMid(), 2.0)
                 else (starBright(), 3.0);
-            Some({ at = { x = px, y = py },
-                   item = Render.box({ x = size, y = size }, color, z) })
+            { at = { x = px, y = py },
+              item = Render.box({ x = size, y = size }, color, z) } :: Nil
         }
 
     // ── HUD: +/− ズームボタン（画面に貼り付く。カメラもズームも掛からない）──

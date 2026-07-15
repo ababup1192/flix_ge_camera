@@ -445,7 +445,7 @@
   <div class="demo">
     <div class="demo-row">
       <canvas id="game" width="640" height="480" tabindex="0"
-              aria-label="追従カメラのデモ。クリックしてから矢印キーで操作"></canvas>
+              aria-label="追従カメラのデモ。クリックしてから矢印キーか WASD で操作"></canvas>
       <div class="panel">
         <h3>いまの状態（World の中身）</h3>
         <div class="readout" id="readout">
@@ -648,7 +648,7 @@ _ -&gt; World.<span class="fn">cameraBounds</span>()</pre>
     <div class="step">
       <div class="t">入力を軸値へ</div>
       <div class="f">Controls.inputOf</div>
-      <div class="d">← → を x = −1/0/+1、↑ ↓ を y = −1/0/+1 に畳む</div>
+      <div class="d">WASD と矢印を意図の表（InputMap）で束ね、x / y = −1/0/+1 の軸に畳む</div>
     </div>
     <div class="arrow" aria-hidden="true">→</div>
     <div class="step">
