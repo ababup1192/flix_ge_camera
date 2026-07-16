@@ -32,7 +32,9 @@ mod Gallery {
 
     /// World を描画コマンドへ投影する: bounds でクランプした center から
     /// 星空2層（視差）→ アリーナ → HUD の順に、実行時とまったく同じ式で組む。
-    def worldCmds(atlas: FontAtlas, world: World.World):
+    /// pub なのは Shot（静止画焼き）が同じ合成を共有するため — 焼き方が2通りあると
+    /// 「GIF と PNG で絵が違う」が起こり得る。
+    pub def worldCmds(atlas: FontAtlas, world: World.World):
             (List[GameEngine.Drawable], List[GameEngine.PolygonRenderCmd]) =
         let d = design();
         let z = CameraRig.safeZoom(world#zoom);

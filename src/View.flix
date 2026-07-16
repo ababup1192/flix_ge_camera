@@ -128,13 +128,13 @@ mod View {
     def ringHover(): Color   = { r = 0.388235f32, g = 0.607843f32, b = 1.000000f32 }
     def labelColor(): Color  = { r = 0.921569f32, g = 0.941176f32, b = 1.000000f32 }
 
-    /// HUD の投影: +（ズームイン）と −（ズームアウト）の2ボタン。
+    /// HUD の投影: +/− の2ボタンと右下の PiP ミニビューポート。
     /// ホバー状態は Controls.zoomButtons が World に立てたものを読むだけ。
     pub def hud(ctx: App.ViewCtx, world: World.World): List[Render.PlacedItem] =
         let design = ctx#visible#size;  // HUD の visible は常に画面全体
-        List.append(
-            button(ctx#atlas, Hud.plusCenter(design),  "+", world#hoverPlus),
-            button(ctx#atlas, Hud.minusCenter(design), "-", world#hoverMinus))
+        button(ctx#atlas, Hud.plusCenter(design),  "+", world#hoverPlus)
+            ::: button(ctx#atlas, Hud.minusCenter(design), "-", world#hoverMinus)
+            ::: pip(design, world)
 
     /// ボタン1個 = 円（縁つき）+ 中央寄せの文字。Text.measure で実寸を測って
     /// 中心から半分ずらすので、文字は円のまんなかに乗る。
@@ -147,4 +147,52 @@ mod View {
         let text = { at = Vec2.sub(center, Vec2.div(dims, 2.0)),
                      item = Render.textTinted(label, atlas, hudFontSize(), labelColor(), zHud() + 1) };
         ringed :: text :: Nil
+
+    // ── PiP: 右下ミニビューポート（本物の絵のミニマップ）──
+    // 専用のミニマップ絵は持たない: メイン画面と同じ部品（床タイル・縁取り・プレイヤー）を
+    // 縮小して映すだけなので、本物と地図が食い違う事故が起きない。窓は HUD として画面に
+    // 貼り付ける — world に置くとカメラと一緒に流れて「いまどこ」の答えにならない。
+    // 窓が見る world は 480×320 でアリーナ（1024×768）よりずっと狭いから、中身は必ず
+    // 窓から溢れる。その溢れを窓の縁で切り落とすのが Render.clippedAll —
+    // clip 無しだと縮小タイルが窓の外の HUD まで敷き詰められてしまう。
+
+    /// 縮小率。窓 96×64 ÷ 0.2 = world 480×320 が見える。
+    def pipScale(): Float64 = 0.2
+
+    /// 窓の矩形。画面右下・縁から 8px。整数 design px に揃える（clip の縁のちらつき対策）。
+    def pipRect(design: Vec2.Vec2): Rect2.Rect2 =
+        { position = { x = design#x - 96.0 - 8.0, y = design#y - 64.0 - 8.0 },
+          size = { x = 96.0, y = 64.0 } }
+
+    /// PiP の z 帯。下地（199）の上に中身（+200）。どちらもボタン（zHud = 100）より
+    /// 手前 — 「いまどこ」は最優先の情報なので、他の UI に隠される側に置かない。
+    def zPipBack(): Int32 = 199
+    def pipLift(): Int32 = 200
+
+    /// 窓の下地の色。clearColor より一段暗い虚空 — アリーナの外がそのまま「床が無い」と読める。
+    def pipBackColor(): Color = { r = 0.101961f32, g = 0.094118f32, b = 0.160784f32 }
+
+    /// PiP 一式 = 下地（縁取りつき）+ 切り抜いた中身。下地は窓の額縁そのものなので
+    /// clip の外に置く — 切ってしまうと枠線の外側半分が消える。
+    def pip(design: Vec2.Vec2, world: World.World): List[Render.PlacedItem] =
+        let r = pipRect(design);
+        let backdrop =
+            { at = r#position,
+              item = Render.box(r#size, pipBackColor(), zPipBack())
+                         |> Render.outline(rimColor(), 1.5) };
+        backdrop :: Render.clippedAll(r, pipContent(r, world))
+
+    /// 中身: プレイヤーを窓の中央に据えた縮小投影 screen = 窓中心 + (world − player) × s。
+    /// タイルはメイン画面と同じ「見える分だけ組む」background を worldView で呼び直す —
+    /// culling はゆるくてよい（はみ出しは clip が切る前提）。
+    def pipContent(r: Rect2.Rect2, world: World.World): List[Render.PlacedItem] =
+        let s = pipScale();
+        let winCenter = Vec2.add(r#position, Vec2.div(r#size, 2.0));
+        let playerPos = { x = world#x, y = world#y };
+        let seen = Vec2.div(r#size, s);
+        let worldView = { position = Vec2.sub(playerPos, Vec2.div(seen, 2.0)), size = seen };
+        let items = background(worldView) ::: rim() :: player(world) :: Nil;
+        items |> List.map(p ->
+            { at = Vec2.add(winCenter, Vec2.mul(Vec2.sub(p#at, playerPos), s)),
+              item = p#item |> Render.scaled(s) |> Render.raiseZ(pipLift()) })
 }
