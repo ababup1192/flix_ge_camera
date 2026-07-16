@@ -109,6 +109,7 @@
   }
   figure.solo { margin: 0 0 24px; }
   figure svg { display: block; width: 100%; height: auto; }
+  figure img { display: block; width: 100%; height: auto; border-radius: 4px; border: 1px solid var(--border); }
   figcaption { font-size: 13px; color: var(--muted); margin-top: 12px; line-height: 1.8; }
   figcaption .b { width: 16px; height: 16px; font-size: 10px; }
 
@@ -236,6 +237,8 @@
     カメラが少し遅れて追いかけ、床と二層の星が違う速さで流れ、端まで行くとカメラだけが止まる。
     ＋/− ボタンで滑らかに寄り引きし、引き切るとアリーナの全景になる —
     <a href="#demo">ページ内のデモ</a>で実際に触れます。
+    本物のゲームの画面右下にはさらに<strong>小窓（PiP）</strong>があって、
+    プレイヤー周辺の絵が縮小されて映ります（デモには無いので<a href="#s6">その6</a>のスクリーンショットで）。
     この全部を作っているのは、ゲーム側に書いた<strong>「箱を追いかける」小さな計算</strong>と
     <strong>設定の数行</strong>だけ。残りの共通の仕事はエンジンが裏で引き受けています。
     それがどう動いているのか、実際のコードと図を1行ずつ対比しながら解説します。
@@ -252,6 +255,7 @@
       <li><a href="#s3">その3 背景タイル</a></li>
       <li><a href="#s4">その4 ズーム</a></li>
       <li><a href="#s5">その5 境界と視差</a></li>
+      <li><a href="#s6">その6 PiP と clip</a></li>
       <li><a href="#summary">まとめ</a></li>
     </ol>
   </nav>
@@ -1093,6 +1097,90 @@ App.makeWith(World.initial)
   </div>
 </section>
 
+<!-- ═══════════════ PiP mini viewport ═══════════════ -->
+<section id="s6">
+  <h2>その6: PiP ミニビューポート — 同じ世界を2台目のカメラで描き直して、窓で切る <span class="file">src/View.flix</span></h2>
+  <p class="sec-intro">
+    本物のゲームの画面右下には小窓（PiP = Picture in Picture）があり、
+    プレイヤー周辺の world がそのまま縮小されて映っています。
+    専用のミニマップ画像はどこにもありません。
+    <a href="#what-is-camera">「そもそもカメラとは」</a>で見たとおりカメラの正体は座標変換なので、
+    <strong>メイン画面と同じ描画部品の列に、もう1つ別の変換（プレイヤー中心・0.2倍）を
+    掛け直せば、それだけで「2台目のカメラ」</strong>になります。
+    本物と同じ部品を映すので、地図と実物が食い違う事故も起きません。
+  </p>
+  <p class="sec-intro">
+    ただし新しい問題が1つ。窓が見る world は 480×320、アリーナは 1024×768 なので、
+    縮小した中身は<strong>必ず窓から溢れます</strong>。
+    <a href="#s3">その3</a>では溢れを「<strong>描く前に選別する</strong>」
+    （見えるタイルだけ組む = culling）ことで解決しましたが、タイルは 32px 単位でしか
+    増減できないので、窓の縁「ぴったり」の始末はこの手では作れません。
+    そこで出番なのがエンジン v0.4.0 の新機能 <strong>clip</strong>
+    （<code>Render.clipped</code> / <code>Render.clippedAll</code>）—
+    「<strong>描いてから、指定した矩形の縁でピクセルを切り落とす</strong>」道具です。
+    選別は「描く量を減らす節約」、clip は「縁の正確な始末」。役割の違う2つを重ねて使います。
+  </p>
+  <div class="pair">
+    <div class="codebox">
+      <div class="bar"><span>View.pip — 2台目のカメラ + clip</span><span>flix</span></div>
+      <pre><code><span class="cm">// 窓: 画面右下 96×64。0.2倍 → world 480×320 が見える</span>
+<span class="kw">def</span> <span class="fn">pipScale</span>(): Float64 = <span class="num">0.2</span>
+
+<span class="cm">// PiP 一式 = 下地（額縁）+ 窓で切り抜いた中身</span>
+<span class="kw">def</span> <span class="fn">pip</span>(design, world): List[Render.PlacedItem] =
+    <span class="kw">let</span> r = <span class="fn">pipRect</span>(design);  <span class="cm">// 右下の窓の矩形</span>
+    <span class="kw">let</span> backdrop = 虚空色の箱 |&gt; Render.<span class="fn">outline</span>(…);  <span class="b b4">4</span>
+    <span class="hl">backdrop :: Render.<span class="fn">clippedAll</span>(r, <span class="fn">pipContent</span>(r, world)) <span class="b b3">3</span></span>
+
+<span class="cm">// 中身: 同じ部品の列に、もう一度別の変換を掛ける</span>
+<span class="kw">def</span> <span class="fn">pipContent</span>(r, world): List[Render.PlacedItem] =
+    <span class="kw">let</span> s = <span class="fn">pipScale</span>();
+    <span class="kw">let</span> winCenter = 窓の中心;
+    <span class="kw">let</span> playerPos = { x = world#x, y = world#y };
+    <span class="hl"><span class="kw">let</span> items = <span class="fn">background</span>(worldView)                <span class="b b1">1</span></span>
+                    ::: <span class="fn">rim</span>() :: <span class="fn">player</span>(world) :: Nil;
+    items |&gt; List.map(p -&gt;
+<span class="hl">        { at = Vec2.add(winCenter,                     <span class="b b2">2</span></span>
+                  Vec2.mul(Vec2.sub(p#at, playerPos), s)),
+          item = p#item |&gt; Render.<span class="fn">scaled</span>(s)
+                        |&gt; Render.<span class="fn">raiseZ</span>(<span class="fn">pipLift</span>()) })
+
+<span class="cm">// その2の式:  screen = (world − cam)    × zoom + 画面中央</span>
+<span class="cm">// PiP の式:   screen = (world − player) × 0.2  + 窓の中心</span>
+<span class="cm">//             — 中心とずらし先が違うだけの、同じ変換</span></code></pre>
+    </div>
+    <figure>
+      <img src="pip.png"
+           alt="実行中の画面。プレイヤーの箱がアリーナ左端の近くに立ち、画面の左側にはアリーナの外の星空が見えている。右下の PiP 小窓にはプレイヤーを中心にした縮小ビューが映り、縮小タイルが窓の途中でまっすぐ途切れて左側が虚空になっている">
+      <figcaption>
+        実際の画面（<code>make bake</code> が焼いたスクリーンショット）。アリーナの左端に立つと、
+        PiP の中の縮小タイルも窓の途中でスパッと途切れて虚空に変わる — これが clip の切り口。<br>
+        <span class="b b1">1</span> 中身の材料は<strong>メイン画面と同じ関数</strong> —
+        床タイルの <code>background</code>（その3）・縁取りの <code>rim</code>・<code>player</code>。
+        <code>worldView</code> は「窓が見る world 480×320」で、タイルの選別もその3のまま再利用。<br>
+        <span class="b b2">2</span> 2台目のカメラの変換
+        <code>窓の中心 + (world − player位置) × 0.2</code>。
+        その2の <code>world − cam + 画面中央</code> と見比べると、
+        中心にする点とずらし先が変わっただけの<strong>同じ引き算</strong>。
+        大きさも <code>Render.scaled</code> で同じ倍率に縮める（その4の ×zoom と同じ役）。<br>
+        <span class="b b3">3</span> 変換しただけでは、溢れた縮小タイルが窓の外（HUD のボタンの上）まで
+        敷き詰められてしまう。<code>Render.clippedAll(r, …)</code> が窓の矩形 r の縁で
+        ピクセルを切り落とす。<br>
+        <span class="b b4">4</span> 下地（額縁）だけは clip の<strong>外</strong>に置く —
+        一緒に切ると枠線の外側半分が消えてしまうから。
+      </figcaption>
+    </figure>
+  </div>
+  <div class="note">
+    <strong>PiP に星空が映らないのはなぜ？</strong> 手抜きではなく設計判断です。
+    視差の星（<a href="#s5">その5</a>）は factor を掛けた「見かけのカメラ」で流れる
+    <strong>カメラ相対の演出</strong>で、「world のどこ」という住所を持ちません —
+    メインカメラと PiP のカメラでは、同じ星が別の場所に見えてしまいます。
+    PiP は「いま world のどこに何があるか」という<strong>事実だけを映す窓</strong>なので、
+    見るカメラによって場所が変わる演出は映さない、と決めています。
+  </div>
+</section>
+
 <!-- ═══════════════ summary ═══════════════ -->
 <section id="summary">
   <h2>まとめ — 仕掛けの分担</h2>
@@ -1106,6 +1194,7 @@ App.makeWith(World.initial)
   </ul>
   <p class="sec-intro">
     境界と視差も同じ流儀で、World は何も知らず <strong>Main の宣言だけが増える</strong>。
+    PiP（その6）も World には触れず、View が同じ部品にもう1つの変換を掛けて clip で切るだけ。
     カメラという特別なオブジェクトは存在せず、<strong>World の中の座標2つと倍率1つ、宣言数行</strong>だけで
     「追いかけ・止まり・寄り引きし・奥行きが出る」カメラ一式が動いています。
     追従もズームも同じ lerp の手口なのがミソです。
@@ -1117,6 +1206,7 @@ App.makeWith(World.initial)
     <code>addParallaxLayer</code> / <code>withHudView</code>、<code>App.ViewCtx</code>（visible）、
     Frame のマウス（cursor / mouseClicked）、
     <code>CameraRig.followDelta / safeZoom / toWorldPos / clampCenter / parallaxCenter</code>、
+    <code>Render.clipped / clippedAll / scaled / raiseZ</code>（clip は v0.4.0）、
     <code>Hash01</code> を利用。
   </footer>
 </section>
