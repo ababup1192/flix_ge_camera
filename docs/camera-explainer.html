@@ -238,7 +238,7 @@
     ＋/− ボタンで滑らかに寄り引きし、引き切るとアリーナの全景になる —
     <a href="#demo">ページ内のデモ</a>で実際に触れます。
     本物のゲームの画面右下にはさらに<strong>小窓（PiP）</strong>があって、
-    プレイヤー周辺の絵が縮小されて映ります（デモには無いので<a href="#s6">その6</a>のスクリーンショットで）。
+    プレイヤー周辺の絵が縮小されて映ります（デモの右下でも動きます。しくみは<a href="#s6">その6</a>）。
     この全部を作っているのは、ゲーム側に書いた<strong>「箱を追いかける」小さな計算</strong>と
     <strong>設定の数行</strong>だけ。残りの共通の仕事はエンジンが裏で引き受けています。
     それがどう動いているのか、実際のコードと図を1行ずつ対比しながら解説します。
@@ -442,8 +442,8 @@
 <section id="demo">
   <h2>次に触ってみる — ブラウザ上の再現デモ</h2>
   <p class="sec-intro">
-    ゲームと同じロジック（速度 120px/秒・追従率 5.0・32px タイル・カメラ境界・二層の星空）を
-    JavaScript で再現したものです。<strong>「カメラ追従」を切る</strong>と、同じ入力でも
+    ゲームと同じロジック（速度 120px/秒・追従率 5.0・32px タイル・カメラ境界・二層の星空・
+    右下の PiP ミニビューポート）を JavaScript で再現したものです。<strong>「カメラ追従」を切る</strong>と、同じ入力でも
     box がすぐ画面外へ出てしまうことが分かります。
   </p>
   <div class="demo">
@@ -461,13 +461,16 @@
         <div class="toggles">
           <label><input type="checkbox" id="follow" checked> カメラ追従（World.step の cam 更新）</label>
           <label><input type="checkbox" id="cross" checked> カメラ中心 <span class="b b2" aria-hidden="true">＋</span> を表示</label>
+          <label><input type="checkbox" id="pip" checked> PiP ミニビューポート（その6）</label>
         </div>
         <button class="reset" id="reset">はじめの位置に戻す</button>
         <p class="hint">キャンバスをクリックしてから <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>（または <kbd>WASD</kbd>）で移動。
         右上の <b>＋/−</b> で寄り引き。<b>端まで歩く</b>とリング（アリーナの縁の枠）の向こうに
         星の余白が見えてカメラが止まり（⛔限界 が readout に出る）、
         <b>−を押し切る</b>とアリーナが星空に浮かぶ全景になる。
-        縁に沿って歩くと星が床よりゆっくり流れる＝視差。</p>
+        縁に沿って歩くと星が床よりゆっくり流れる＝視差。
+        右下の<b>小窓（PiP）</b>は自分を中心にした縮小ビューで、溢れた絵は窓の縁でスパッと切れる
+        （しくみは<a href="#s6">その6</a>）。</p>
       </div>
     </div>
   </div>
@@ -1102,7 +1105,8 @@ App.makeWith(World.initial)
   <h2>その6: PiP ミニビューポート — 同じ世界を2台目のカメラで描き直して、窓で切る <span class="file">src/View.flix</span></h2>
   <p class="sec-intro">
     本物のゲームの画面右下には小窓（PiP = Picture in Picture）があり、
-    プレイヤー周辺の world がそのまま縮小されて映っています。
+    プレイヤー周辺の world がそのまま縮小されて映っています —
+    <a href="#demo">上の再現デモ</a>の右下でも同じものが動いているので、動かしながら読めます。
     専用のミニマップ画像はどこにもありません。
     <a href="#what-is-camera">「そもそもカメラとは」</a>で見たとおりカメラの正体は座標変換なので、
     <strong>メイン画面と同じ描画部品の列に、もう1つ別の変換（プレイヤー中心・0.2倍）を
@@ -1220,12 +1224,15 @@ App.makeWith(World.initial)
   const readout = document.getElementById('readout');
   const followCk = document.getElementById('follow');
   const crossCk = document.getElementById('cross');
+  const pipCk = document.getElementById('pip');
   const resetBtn = document.getElementById('reset');
 
   // ゲームと同じ定数
   const W = 320, H = 240, SPEED = 120, FOLLOW = 5.0, TILE = 32, SIZE = 16;
   const ZSTEP = 1.25, ZMIN = 0.2, ZMAX = 2.5, ZEASE = 8.0;   // World.flix の zoom 定数と同じ
   const BTN_R = 11;                                           // Hud.radius()
+  const PIP = { w: 96, h: 64, margin: 8, scale: 0.2 };        // View.pipRect / pipScale と同じ
+  const PIP_BACK = '#1a1829';                                 // View.pipBackColor（窓の下地の虚空色）
   const TILE_A = '#24242e', TILE_B = '#30303c', PLAYER = '#639bff', CAM = '#ffb454';
   // 星空に浮かぶアリーナ（World.arena）と、カメラが映してよい範囲（+128px の星空余白）
   const ARENA = { x: -352, y: -256, w: 1024, h: 768 };
@@ -1333,6 +1340,55 @@ App.makeWith(World.initial)
     }
   }
 
+  // world の部品（床タイル・リング・box）を1回分描く — View.flix の background/rim/player に相当。
+  // 部品はこの1組しか持たず、「world のどこを見るか(center)・画面のどこに置くか(origin)・
+  // 何倍か(k)」のカメラ3点セットだけ差し替えて、メイン画面と PiP の両方から呼ぶ
+  //（その6の「同じ部品にもう1つ別の変換を掛ける」を JS でもそのまま再現）
+  function drawWorldParts(center, origin, viewW, viewH, k) {
+    const sx = wx => (wx - center.x) * k + origin.x;
+    const sy = wy => (wy - center.y) * k + origin.y;
+    const seenW = viewW / k, seenH = viewH / k;
+    // 床タイル: 見えている範囲 ∩ アリーナだけ（その3の culling）
+    const c0 = Math.max(Math.floor((center.x - seenW / 2) / TILE), ARENA.x / TILE);
+    const r0 = Math.max(Math.floor((center.y - seenH / 2) / TILE), ARENA.y / TILE);
+    const c1 = Math.min(Math.floor((center.x + seenW / 2) / TILE) + 1, (ARENA.x + ARENA.w) / TILE);
+    const r1 = Math.min(Math.floor((center.y + seenH / 2) / TILE) + 1, (ARENA.y + ARENA.h) / TILE);
+    for (let row = r0; row < r1; row++) {
+      for (let col = c0; col < c1; col++) {
+        ctx.fillStyle = (((col + row) % 2) + 2) % 2 === 0 ? TILE_A : TILE_B;
+        ctx.fillRect(sx(col * TILE), sy(row * TILE), TILE * k + 0.5, TILE * k + 0.5);
+      }
+    }
+    // アリーナの縁取りリング
+    ctx.strokeStyle = PLAYER; ctx.lineWidth = Math.max(2 * k, 1);
+    ctx.strokeRect(sx(ARENA.x), sy(ARENA.y), ARENA.w * k, ARENA.h * k);
+    // box
+    ctx.fillStyle = PLAYER;
+    ctx.fillRect(sx(st.x) - SIZE * k / 2, sy(st.y) - SIZE * k / 2, SIZE * k, SIZE * k);
+  }
+
+  // PiP ミニビューポート（View.pip と同じ仕様）: 右下 96×64・プレイヤー中心・0.2倍。
+  // 星空は描かない — 視差の星は world 座標を持たないカメラ相対の演出だから（その6のコラム）
+  function drawPip() {
+    const px = W - PIP.w - PIP.margin, py = H - PIP.h - PIP.margin;
+    // 額縁（下地と枠線）は clip の外 — 一緒に切ると枠線の外側半分が消える
+    ctx.fillStyle = PIP_BACK;
+    ctx.fillRect(px, py, PIP.w, PIP.h);
+    // 溢れた中身は窓の縁で切り落とす。エンジンではこの切り落としを glScissor でやっているが、
+    // Canvas には clip() が最初から用意されている — 道具は違っても「描いてから切る」仕事は同じ
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(px, py, PIP.w, PIP.h);
+    ctx.clip();
+    // 2台目のカメラ: screen = 窓の中心 + (world − player) × 0.2
+    drawWorldParts({ x: st.x, y: st.y },
+                   { x: px + PIP.w / 2, y: py + PIP.h / 2 },
+                   PIP.w, PIP.h, PIP.scale);
+    ctx.restore();
+    ctx.strokeStyle = PLAYER; ctx.lineWidth = 1.5;
+    ctx.strokeRect(px, py, PIP.w, PIP.h);
+  }
+
   // エンジン sceneItems と同じ合成: bounds クランプ → 視差 → アリーナ → リング → プレイヤー
   function draw() {
     const z = st.zoom;
@@ -1349,22 +1405,8 @@ App.makeWith(World.initial)
     // 星空（遠景 0.25・近景 0.55 — 実ゲームの addParallaxLayer と同じ factor）
     drawStars(0.25, 48, 11, cc, z);
     drawStars(0.55, 96, 47, cc, z);
-    // アリーナの床タイル: 見えている範囲 ∩ アリーナだけ
-    const c0 = Math.max(Math.floor((cc.x - seenW / 2) / TILE), ARENA.x / TILE);
-    const r0 = Math.max(Math.floor((cc.y - seenH / 2) / TILE), ARENA.y / TILE);
-    const c1 = Math.min(Math.floor((cc.x + seenW / 2) / TILE) + 1, (ARENA.x + ARENA.w) / TILE);
-    const r1 = Math.min(Math.floor((cc.y + seenH / 2) / TILE) + 1, (ARENA.y + ARENA.h) / TILE);
-    for (let row = r0; row < r1; row++) {
-      for (let col = c0; col < c1; col++) {
-        ctx.fillStyle = (((col + row) % 2) + 2) % 2 === 0 ? TILE_A : TILE_B;
-        ctx.fillRect(sx(col * TILE), sy(row * TILE), TILE * z + 0.5, TILE * z + 0.5);
-      }
-    }
-    // アリーナの縁取りリング
-    ctx.strokeStyle = PLAYER; ctx.lineWidth = Math.max(2 * z, 1);
-    ctx.strokeRect(sx(ARENA.x), sy(ARENA.y), ARENA.w * z, ARENA.h * z);
-    ctx.fillStyle = PLAYER;
-    ctx.fillRect(sx(st.x) - SIZE * z / 2, sy(st.y) - SIZE * z / 2, SIZE * z, SIZE * z);
+    // 床タイル・リング・box は共用部品で（1台目のカメラ = cc を画面中央に・×zoom）
+    drawWorldParts(cc, { x: W / 2, y: H / 2 }, W, H, z);
     if (crossCk.checked) {
       ctx.strokeStyle = CAM; ctx.lineWidth = 1.5;
       ctx.beginPath();
@@ -1375,6 +1417,8 @@ App.makeWith(World.initial)
     // HUD ボタン（カメラもズームも掛からない = View.hud と同じ画面固定）
     drawButton(plusC, '+', hover.plus);
     drawButton(minusC, '−', hover.minus);
+    // PiP（2台目のカメラ。HUD と同じく画面に貼り付く）
+    if (pipCk.checked) drawPip();
     ctx.restore();
 
     readout.innerHTML =
